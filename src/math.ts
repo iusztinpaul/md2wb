@@ -89,23 +89,38 @@ export function prepareMath(source: string): PreparedMarkdown {
 }
 
 /**
- * Escape the opening `$` of every inline span that fails Pandoc's rule for
- * math (no space just inside the dollars, no digit right after the closing
- * one), so "$5 and $10" stays text and the main parse pairs the remaining
- * dollars correctly. Escaping one span can re-pair later dollars, hence the
- * loop.
+ * Pandoc's rule for inline math: no space just inside the dollars and no digit
+ * right after the closing one. A `$...$` span that fails it is a price
+ * ("$5 and $10"), not math.
+ */
+export function isPriceSpan(source: string, start: number, end: number): boolean {
+  if (source.startsWith("$$", start)) return false;
+  const math = /\S/.test(source[start + 1] ?? "") && /\S/.test(source[end - 2] ?? "") && !/\d/.test(source[end] ?? "");
+  return !math;
+}
+
+const mathParser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+
+/**
+ * Escape the opening `$` of every price span so it stays text and the main
+ * parse pairs the remaining dollars correctly. Escaping one span can re-pair
+ * later dollars, hence the loop.
  */
 function escapePrices(markdown: string): string {
-  const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+  if (!markdown.includes("$")) return markdown;
   for (let round = 0; round < 100; round++) {
     const openers: number[] = [];
-    visit(parser.parse(markdown), "inlineMath", (node) => {
-      const start = node.position!.start.offset!;
-      const end = node.position!.end.offset!;
-      if (markdown.startsWith("$$", start)) return;
-      const tex =
-        /\S/.test(markdown[start + 1] ?? "") && /\S/.test(markdown[end - 2] ?? "") && !/\d/.test(markdown[end] ?? "");
-      if (!tex) openers.push(start);
+    // Escaping inside a reference link would change its label so it no longer
+    // matches the definition; convert() turns such prices back into text.
+    let referenceEnd = -1;
+    visit(mathParser.parse(markdown), (node) => {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) return;
+      if (node.type === "linkReference") referenceEnd = end;
+      else if (node.type === "inlineMath" && start >= referenceEnd && isPriceSpan(markdown, start, end)) {
+        openers.push(start);
+      }
     });
     if (!openers.length) break;
     for (const offset of openers.reverse()) markdown = `${markdown.slice(0, offset)}\\${markdown.slice(offset)}`;

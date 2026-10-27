@@ -18,7 +18,7 @@ import { parse as parseYaml } from "yaml";
 import { renderCode } from "./code.js";
 import { processImages } from "./images.js";
 import { inlineMathToHtml, inlineMathToText } from "./inline-math.js";
-import { loadPreamble, prepareMath, renderDisplayMath } from "./math.js";
+import { isPriceSpan, loadPreamble, prepareMath, renderDisplayMath } from "./math.js";
 import { buildPage } from "./page.js";
 import { pngDataUri } from "./raster.js";
 import { renderTable, type TableCell } from "./table.js";
@@ -151,7 +151,12 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
       case "inlineMath": {
         const latex = node.value;
-        if (!ctx.source.startsWith("$$", node.position?.start.offset ?? -1)) {
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        if (start !== undefined && end !== undefined && isPriceSpan(ctx.source, start, end)) {
+          // Only left unescaped inside reference links (see prepareMath).
+          replaceNode(node, { type: "text", value: ctx.source.slice(start, end) });
+        } else if (start === undefined || !ctx.source.startsWith("$$", start)) {
           replaceNode(node, { type: "html", value: inlineMathToHtml(latex) });
         } else if (!latex.trim()) {
           removed.add(node);

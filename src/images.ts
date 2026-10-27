@@ -1,6 +1,7 @@
 // Inline every <img> as a data URI so the copied HTML carries the pixels,
 // and (for X) wrap images with a "Copy image" button for manual pasting.
 
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,20 +62,25 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
   }
   if (!src) throw new Error("empty src");
   let file: string;
-  if (/^file:/i.test(src)) {
+  if (/^file:\/\//i.test(src)) {
     file = fileURLToPath(src);
   } else {
-    let name = src.replace(/[?#].*$/, ""); // drop ?query and #fragment
-    try {
-      name = decodeURIComponent(name);
-    } catch {
-      // A literal % in the file name.
-    }
-    file = path.resolve(baseDir, name);
+    // The path as written, else without a ?query or #fragment.
+    const name = src.replace(/^file:/i, "");
+    const candidates = [name, name.replace(/[?#].*$/, "")].map((n) => path.resolve(baseDir, decodePath(n)));
+    file = candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
   }
   const mime = MIME_BY_EXT[path.extname(file).toLowerCase()];
   if (!mime) throw new Error("unsupported image type");
   return encode(await readFile(file), mime);
+}
+
+function decodePath(name: string): string {
+  try {
+    return decodeURIComponent(name);
+  } catch {
+    return name; // a literal % in the file name
+  }
 }
 
 function encode(data: Buffer, mime: string): string {

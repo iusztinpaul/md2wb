@@ -70,8 +70,15 @@ describe("inlineMathToHtml", () => {
   it("keeps \\lbrace/\\rbrace, reads command arguments of \\frac, and knows more text commands", () => {
     expect(inlineMathToHtml(String.raw`\lbrace x \rbrace`)).toBe("{ <em>x</em> }");
     expect(inlineMathToHtml(String.raw`\frac\pi2`)).toBe("(<em>π</em>)/(2)");
-    expect(inlineMathToHtml(String.raw`\textbf{v} + a \bmod b`)).toBe("v + <em>a</em> mod <em>b</em>");
+    expect(inlineMathToHtml(String.raw`\textbf{v} + a \bmod b`)).toBe("<strong>v</strong> + <em>a</em> mod <em>b</em>");
+    expect(inlineMathToHtml(String.raw`\mathit{diff}`)).toBe("<em>diff</em>");
     expect(inlineMathToText(String.raw`\text{the "best"}`)).toBe('the "best"');
+  });
+
+  it("keeps function names apart from neighbouring letters", () => {
+    expect(inlineMathToHtml(String.raw`x\bmod 2`)).toBe("<em>x</em> mod 2");
+    expect(inlineMathToHtml(String.raw`a\sin x`)).toBe("<em>a</em> sin <em>x</em>");
+    expect(inlineMathToHtml(String.raw`\sin{x}`)).toBe("sin <em>x</em>");
   });
 
   it("uses Unicode for scripts with a minus sign", () => {

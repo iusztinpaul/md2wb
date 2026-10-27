@@ -64,35 +64,45 @@ const RENAMED: Record<string, string> = {
   dotsc: "…",
   dotsb: "⋯",
   dotsm: "⋯",
-  bmod: "mod",
+  bmod: "\\mod",
   boldsymbol: "\\mathbf",
   bm: "\\mathbf",
 };
 const RENAMED_RE = new RegExp(`\\\\(${Object.keys(RENAMED).join("|")})(?![A-Za-z])`, "g");
 
-// Commands whose argument is upright text rather than math.
+// Commands whose argument is text rather than math: kept as written, with
+// italic and bold variants marked up.
 const TEXT_COMMAND_RE =
-  /\\(?:text|textrm|textbf|textit|texttt|textsf|emph|mathrm|mathit|mathsf|mathtt|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
+  /\\(text|textrm|textbf|textit|texttt|textsf|emph|mathrm|mathit|mathsf|mathtt|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
+const TEXT_STYLE: Record<string, string> = { textit: "em", emph: "em", mathit: "em", textbf: "strong" };
 
 /** Convert one inline TeX expression (without the dollars) to an HTML fragment. */
 export function inlineMathToHtml(latex: string): string {
-  // \text{...} contents are set aside so no math processing touches them.
+  // \text{...} contents are set aside (as HTML) so no math processing touches them.
   const upright: string[] = [];
   let text = latex
     .trim()
     .replaceAll("\\{", LBRACE)
     .replaceAll("\\}", RBRACE)
-    .replace(TEXT_COMMAND_RE, (_, words: string) => {
+    .replace(TEXT_COMMAND_RE, (_, command: string, words: string) => {
       // Symbols such as \mu still convert; scripts and letters stay as typed.
-      const symbols = words.replace(/\\(?:[A-Za-z]+|[^A-Za-z])/g, (command) => toUnicode(command));
-      return `${UPRIGHT}${upright.push(symbols) - 1}${UPRIGHT_END}`;
+      let html = escapeXml(words.replace(/\\(?:[A-Za-z]+|[^A-Za-z])/g, (symbol) => toUnicode(symbol)));
+      const tag = TEXT_STYLE[command];
+      if (tag) html = `<${tag}>${html}</${tag}>`;
+      return `${UPRIGHT}${upright.push(html) - 1}${UPRIGHT_END}`;
     });
   text = expandFrac(text.replace(DROPPED_RE, "").replace(RENAMED_RE, (_, name: string) => RENAMED[name]!));
-  text = text.replace(FUNCTION_COMMAND_RE, "$1");
+  // Function names get a space where they would otherwise merge with a
+  // neighbouring letter (x\bmod 2, a\sin{x}).
+  text = text.replace(FUNCTION_COMMAND_RE, (match, name: string, offset: number, whole: string) => {
+    const before = /[A-Za-z0-9]/.test(whole[offset - 1] ?? "") ? " " : "";
+    const after = /[A-Za-z{]/.test(whole[offset + match.length] ?? "") ? " " : "";
+    return before + name + after;
+  });
   text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
   return italicize(text)
-    .replace(/\uE008(\d+)\uE009/g, (_, i: string) => escapeXml(upright[Number(i)]!))
+    .replace(/\uE008(\d+)\uE009/g, (_, i: string) => upright[Number(i)]!)
     .replace(/[\uE008\uE009]/g, "")
     .replaceAll(LBRACE, "{")
     .replaceAll(RBRACE, "}")

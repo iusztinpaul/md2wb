@@ -112,6 +112,11 @@ describe("convert", () => {
     expect(body).toContain("while <em>x</em> varies");
   });
 
+  it("keeps reference links whose label contains prices", async () => {
+    const { body } = await run("See [$5 and $10 plans] here.\n\n[$5 and $10 plans]: https://example.com");
+    expect(body).toContain('<a href="https://example.com">$5 and $10 plans</a>');
+  });
+
   it("drops an empty inline $$ $$", async () => {
     const { body } = await run("text $$ $$ more");
     expect(body).not.toContain("<code");
@@ -190,13 +195,17 @@ describe("convert", () => {
     expect(images(body).map((i) => i.alt)).toEqual(["q", "f", "u"]);
   });
 
-  it("loads local images whose names contain %", async () => {
+  it("loads local images whose names contain %, # or a relative file: prefix", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "md2wb-"));
     await copyFile(`${fixtures}/tiny.png`, path.join(dir, "50%off.png"));
+    await copyFile(`${fixtures}/tiny.png`, path.join(dir, "C#-vs-java.png"));
     const warnings: string[] = [];
-    const html = await convert("![sale](50%off.png)", { baseDir: dir, onWarning: (w) => warnings.push(w) });
+    const html = await convert("![sale](50%off.png)\n\n![lang](C#-vs-java.png)\n\n![rel](file:50%off.png)", {
+      baseDir: dir,
+      onWarning: (w) => warnings.push(w),
+    });
     expect(warnings).toEqual([]);
-    expect(images(content(html))).toMatchObject([{ alt: "sale" }]);
+    expect(images(content(html)).map((i) => i.alt)).toEqual(["sale", "lang", "rel"]);
   });
 
   it("wraps inline X images in a span and leaves linked ones unwrapped", async () => {
