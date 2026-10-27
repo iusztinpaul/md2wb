@@ -71,7 +71,7 @@ function splitFrontMatter(markdown: string): { language?: string; body: string }
   const yaml = match?.[1] ?? "";
   // A leading `---` may just be a thematic break: only strip a block that is
   // empty or starts right after it, and parses as a YAML mapping (or nothing).
-  if (!match || (yaml && !/^\S/.test(yaml))) return { body: markdown };
+  if (!match || (match[1] !== undefined && !/^\S/.test(yaml))) return { body: markdown };
   let data: unknown;
   try {
     data = parseYaml(yaml);
@@ -109,7 +109,7 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
     });
 
-  visit(tree, (node, _, parent) => {
+  visit(tree, (node, index, parent) => {
     if (node.type === "html" && FLOW_PARENTS.has(parent?.type ?? "root")) {
       const tags = directiveTags(node.value);
       if (tags) {
@@ -153,10 +153,14 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
       case "inlineMath": {
         const latex = node.value;
-        const { kind, raw } = inlineMathKind(node, ctx.source);
+        const kind = inlineMathKind(node, ctx.source);
         if (kind === "text") {
-          replaceNode(node, { type: "text", value: raw });
-        } else if (kind === "inline") {
+          // Not math after all (a price): parse it as the Markdown it is.
+          const children = parseInline(`$${latex}$`);
+          (parent!.children as PhrasingContent[]).splice(index!, 1, ...children);
+          return [SKIP, index! + children.length];
+        }
+        if (kind === "inline") {
           replaceNode(node, { type: "html", value: inlineMathToHtml(latex) });
         } else if (latex.trim()) {
           // `$$...$$` inside a paragraph is still display math.
@@ -201,16 +205,21 @@ type InlineMath = Extract<Nodes, { type: "inlineMath" }>;
  * math, and Pandoc's rule tells `$x$` from prices (no space just inside the
  * dollars, no digit right after the closing one), so "$5 and $10" is text.
  */
-function inlineMathKind(node: InlineMath, source: string): { kind: "display" | "inline" | "text"; raw: string } {
+function inlineMathKind(node: InlineMath, source: string): "display" | "inline" | "text" {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
-  if (start === undefined || end === undefined) return { kind: "inline", raw: `$${node.value}$` };
-  // Line breaks inside the span drop the container prefixes (`> `, indents).
-  const raw = source.slice(start, end).replace(/\n[ \t>]*/g, "\n");
-  if (raw.startsWith("$$")) return { kind: "display", raw };
-  const inner = raw.slice(1, -1);
-  const tex = /^\S/.test(inner) && /\S$/.test(inner) && !/\d/.test(source[end] ?? "");
-  return { kind: tex ? "inline" : "text", raw };
+  if (start === undefined || end === undefined) return "inline";
+  if (source.startsWith("$$", start)) return "display";
+  const tex = /\S/.test(source[start + 1] ?? "") && /\S/.test(source[end - 2] ?? "") && !/\d/.test(source[end] ?? "");
+  return tex ? "inline" : "text";
+}
+
+const inlineParser = unified().use(remarkParse).use(remarkGfm).use(remarkBreaks);
+
+function parseInline(markdown: string): PhrasingContent[] {
+  const tree = inlineParser.runSync(inlineParser.parse(markdown)) as Root;
+  const first = tree.children[0];
+  return first?.type === "paragraph" ? first.children : [{ type: "text", value: markdown }];
 }
 
 function directiveTags(html: string): string[] | undefined {
@@ -256,10 +265,8 @@ function cellText(node: Nodes, source: string): string {
     case "text":
     case "inlineCode":
       return node.value;
-    case "inlineMath": {
-      const { kind, raw } = inlineMathKind(node, source);
-      return kind === "text" ? raw : inlineMathToText(node.value);
-    }
+    case "inlineMath":
+      return inlineMathKind(node, source) === "text" ? `$${node.value}$` : inlineMathToText(node.value);
     case "break":
       return "\n";
     case "html":

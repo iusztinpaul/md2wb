@@ -3,6 +3,7 @@
 // TeX, so inline math stays as selectable text instead of tiny images.
 
 import { replace as unicodeit } from "unicodeit";
+import { escapeXml } from "./raster.js";
 
 const SUPERSCRIPT: Record<string, string> = {
   "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
@@ -45,6 +46,7 @@ const END = "\uE005";
 const LBRACE = "\uE006";
 const RBRACE = "\uE007";
 const UPRIGHT = "\uE008";
+const UPRIGHT_END = "\uE009";
 
 // Commands whose argument is upright text rather than math.
 const TEXT_COMMAND_RE = /\\(?:text|textrm|mathrm|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
@@ -57,21 +59,22 @@ export function inlineMathToHtml(latex: string): string {
     .trim()
     .replaceAll("\\{", LBRACE)
     .replaceAll("\\}", RBRACE)
-    .replace(TEXT_COMMAND_RE, (_, words: string) => `${UPRIGHT}${upright.push(words) - 1}\uE009`);
+    .replace(TEXT_COMMAND_RE, (_, words: string) => {
+      // Symbols such as \mu still convert; scripts and letters stay as typed.
+      const symbols = words.replace(/\\(?:[A-Za-z]+|[^A-Za-z])/g, (command) => toUnicode(command));
+      return `${UPRIGHT}${upright.push(symbols) - 1}${UPRIGHT_END}`;
+    });
   text = expandFrac(text).replace(FUNCTION_COMMAND_RE, "$1");
   text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
   return italicize(text)
-    .replace(/\uE008(\d+)\uE009/g, (_, i: string) => escapeHtml(upright[Number(i)]!))
+    .replace(/\uE008(\d+)\uE009/g, (_, i: string) => escapeXml(upright[Number(i)]!))
+    .replace(/[\uE008\uE009]/g, "")
     .replaceAll(LBRACE, "{")
     .replaceAll(RBRACE, "}")
     .replaceAll(AMP, "&amp;")
     .replaceAll(LT, "&lt;")
     .replaceAll(GT, "&gt;");
-}
-
-function escapeHtml(text: string): string {
-  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function toUnicode(latex: string): string {
@@ -98,8 +101,8 @@ function shieldScripts(text: string): string {
       i = next;
     } else if ((ch === "^" || ch === "_") && text[i + 1] === UPRIGHT) {
       // A \text{...} script such as A^\text{T}.
-      const next = text.indexOf("\uE009", i) + 1;
-      out += (ch === "^" ? SUP : SUB) + text.slice(i + 1, next) + END;
+      const [inner, next] = braceArg(text, i + 1);
+      out += (ch === "^" ? SUP : SUB) + inner + END;
       i = next;
     } else {
       out += ch;
@@ -118,8 +121,12 @@ export function inlineMathToText(latex: string): string {
     .replaceAll("&amp;", "&");
 }
 
-/** Read one `{...}` argument (or a single character) starting at `pos`. */
+/** Read one `{...}` argument, set-aside text, or single character at `pos`. */
 function braceArg(s: string, pos: number): [string, number] {
+  if (s[pos] === UPRIGHT) {
+    const close = s.indexOf(UPRIGHT_END, pos);
+    if (close !== -1) return [s.slice(pos, close + 1), close + 1];
+  }
   if (s[pos] !== "{") return [s.slice(pos, pos + 1), pos + 1];
   let depth = 0;
   for (let i = pos; i < s.length; i++) {

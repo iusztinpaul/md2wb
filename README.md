@@ -52,8 +52,8 @@ Everything in GitHub-flavored Markdown works: headings, emphasis, lists, links, 
 
 A few rules decide what counts as math:
 
-- `$…$` is inline math only when there is no space just inside the dollars and no digit right after the closing one, so "it costs $5 and $10" stays text.
-- `\[…\]` is display math only on its own lines (blockquotes included). Inside a paragraph it is Markdown's escaped brackets.
+- `$…$` is inline math only when there is no space just inside the dollars and no digit right after the closing one, so "it costs $5 and $10" stays text. In a paragraph that mixes prices and math, escape the price dollars (`\$5`).
+- `\[…\]` is display math only on its own lines (in blockquotes and list items too). Inside a paragraph it is Markdown's escaped brackets.
 - `$$…$$` and `\begin{equation|align|gather|multline|eqnarray}` are always display math.
 
 Code blocks without a language use the front-matter `language` (for example `language: python`), or plain text if there is none.

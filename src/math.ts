@@ -55,13 +55,15 @@ export function prepareMath(source: string): PreparedMarkdown {
     const indent = whole.slice(lineStart, offset);
     const lineEnd = whole.indexOf("\n", offset + match.length);
     const rest = whole.slice(offset + match.length, lineEnd === -1 ? undefined : lineEnd);
-    // On its own lines (also inside a blockquote): a `$$` block that keeps the
-    // author's line prefixes. Inside a paragraph: inline `$$...$$`.
-    if (/^[ \t>]*$/.test(indent) && /^[ \t]*$/.test(rest)) {
-      if (!bracket) return `$$\n${indent}${match}\n${indent}$$`;
+    // On its own lines (only blockquote `>` or list markers before it): a `$$`
+    // block. Inside a paragraph: inline `$$...$$`.
+    if (/^(?:[ \t>]|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*$/.test(indent) && /^[ \t]*$/.test(rest)) {
+      // Added lines repeat `>` but turn list markers into indentation.
+      const cont = indent.replace(/[-*+]|\d{1,9}[.)]/g, (marker) => " ".repeat(marker.length));
+      if (!bracket) return `$$\n${cont}${match}\n${cont}$$`;
       // The `$$` fences must sit on lines of their own.
-      const head = /^[ \t]*\n/.test(body) ? "" : `\n${indent}`;
-      const tail = /\n[ \t>]*$/.test(body) ? "" : `\n${indent}`;
+      const head = /^[ \t]*\n/.test(body) ? "" : `\n${cont}`;
+      const tail = /\n[ \t>]*$/.test(body) ? "" : `\n${cont}`;
       return `$$${head}${body}${tail}$$`;
     }
     return bracket ? match : `$$${body}$$`;

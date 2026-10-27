@@ -54,6 +54,12 @@ describe("inlineMathToHtml", () => {
     expect(inlineMathToHtml(String.raw`A^\text{T}`)).toBe("<em>A</em><sup>T</sup>");
   });
 
+  it("still converts symbols inside upright text", () => {
+    expect(inlineMathToHtml(String.raw`5\,\mathrm{\mu m}`)).toMatch(/^5\s+μ m$/); // \, is a thin space
+    expect(inlineMathToHtml(String.raw`\mathrm{\Delta}x`)).toBe("Δ<em>x</em>");
+    expect(inlineMathToHtml(String.raw`\frac\text{a}b`)).toBe("(a)/(<em>b</em>)");
+  });
+
   it("leaves unknown commands after ^ alone", () => {
     expect(inlineMathToHtml(String.raw`e^\foo`)).toBe(String.raw`<em>e</em>^\foo`);
   });

@@ -81,10 +81,18 @@ describe("convert", () => {
     expect(body).toContain("<p>After paragraph.</p>");
   });
 
-  it("drops blockquote markers from prices spanning lines", async () => {
-    const { body } = await run("> costs $5 and\n> $10 total");
-    expect(body).toContain("$10 total");
-    expect(body).not.toMatch(/&#x3E;|&gt;/);
+  it("parses price text as Markdown, without blockquote markers", async () => {
+    const quoted = await run("> costs $5 and\n> $10 total");
+    expect(quoted.body).toContain("costs $5 and<br>\n$10 total");
+    expect(quoted.body).not.toMatch(/&#x3E;|&gt;/);
+    const styled = await run("Pay $5 for **bold** and $10.");
+    expect(styled.body).toContain("Pay $5 for <strong>bold</strong> and $10.");
+  });
+
+  it("converts \\[...\\] that starts a list item", async () => {
+    const { body } = await run("- \\[ x = 1 \\]\n- next");
+    expect(images(body)).toMatchObject([{ alt: "math" }]);
+    expect(body).toContain("<li>next</li>");
   });
 
   it("leaves prices and escaped brackets as text", async () => {
@@ -177,9 +185,9 @@ describe("convert", () => {
     expect(body).toContain("Rest");
   });
 
-  it("strips empty front matter", async () => {
-    const { body } = await run("---\n---\n\nHello");
-    expect(body).not.toContain("<hr>");
+  it("strips empty front matter but keeps two separated rules", async () => {
+    expect((await run("---\n---\n\nHello")).body).not.toContain("<hr>");
+    expect((await run("---\n\n---\n\nHello")).body.match(/<hr>/g)).toHaveLength(2);
   });
 
   it("strips front matter and HTML comments", async () => {
