@@ -1,0 +1,111 @@
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { convert } from "../src/index.js";
+import { content, images } from "./helpers.js";
+
+const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url));
+
+async function run(markdown: string, target: "substack" | "x" = "substack") {
+  const warnings: string[] = [];
+  const html = await convert(markdown, { target, baseDir: fixtures, onWarning: (w) => warnings.push(w) });
+  return { html, body: content(html), warnings };
+}
+
+describe("convert", () => {
+  it("renders prose as plain HTML", async () => {
+    const { body, warnings } = await run("# Title\n\nSome **bold** and ~~gone~~ text.\nNext line.\n\n- one\n- two");
+    expect(body).toContain("<h1>Title</h1>");
+    expect(body).toContain("<strong>bold</strong>");
+    expect(body).toContain("<del>gone</del>");
+    expect(body).toContain("text.<br>\nNext line.");
+    expect(body).toContain("<li>one</li>");
+    expect(warnings).toEqual([]);
+  });
+
+  it("renders code blocks as images sized for the target", async () => {
+    const source = "```python\nprint('hi')\n```";
+    const substack = images((await run(source)).html);
+    const x = images((await run(source, "x")).html);
+    expect(substack).toMatchObject([{ alt: "code", width: 1920 + 2 * 100 }]);
+    expect(x).toMatchObject([{ alt: "code", width: 1200 + 2 * 30 }]);
+  });
+
+  it("keeps text-snippet code as text and drops hide-cell code", async () => {
+    const { body } = await run(
+      "<!-- md2wb: text-snippet -->\n```bash\nnpm i\n```\n\n```python hide-cell\nsecret()\n```\n\n<!-- nb2wb: hide-cell -->\n```python\nalso_secret()\n```",
+    );
+    expect(body).toContain('<pre><code class="language-bash">npm i');
+    expect(body).not.toContain("secret");
+    expect(images(body)).toEqual([]);
+  });
+
+  it("renders display math as numbered images and inline math as text", async () => {
+    const { body, warnings } = await run(
+      "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2 \\label{eq:p}$$\n\nBy \\eqref{eq:p}, and \\[x\\] too.",
+    );
+    expect(body).toContain("<em>E</em> = <em>m</em><em>c</em>²");
+    expect(body).toContain("By (1), and");
+    const math = images(body);
+    expect(math.map((i) => i.alt)).toEqual(["math", "math"]);
+    expect(math.every((i) => i.width === 1920)).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  it("splits paragraphs around inline display math", async () => {
+    const { body } = await run("Before $$x$$ after.");
+    expect(body).toMatch(/<p>Before<\/p>\n<p><img src="data:image\/png[^"]+" alt="math"><\/p>\n<p>after.<\/p>/);
+  });
+
+  it("applies latex-preamble definitions and hides the block", async () => {
+    const { body, warnings } = await run(
+      "```latex-preamble\n\\usepackage{xcolor}\n\\definecolor{brand}{HTML}{E8C547}\n\\newcommand{\\R}{\\mathbb{R}}\n```\n\n$$\\color{brand} x \\in \\R$$",
+    );
+    expect(warnings).toEqual([]);
+    expect(body).not.toContain("usepackage");
+    expect(images(body)).toHaveLength(1);
+  });
+
+  it("keeps broken math as source and warns", async () => {
+    const { body, warnings } = await run("$$\\frac{a$$");
+    expect(images(body)).toEqual([]);
+    expect(body).toContain("$$");
+    expect(warnings).toHaveLength(1);
+  });
+
+  it("renders tables as images", async () => {
+    const { body } = await run("| a | b |\n|:--|--:|\n| $x_1$ | `y` |", "x");
+    expect(images(body)).toMatchObject([{ alt: "table", width: 1200 }]);
+    expect(body).not.toContain("<table");
+  });
+
+  it("embeds local images and drops missing ones with a warning", async () => {
+    const { body, warnings } = await run("![dot](tiny.png)\n\n![gone](missing.png)");
+    expect(images(body)).toMatchObject([{ alt: "dot", width: 2, height: 3 }]);
+    expect(body).not.toContain("missing.png");
+    expect(warnings).toEqual([expect.stringContaining("missing.png")]);
+  });
+
+  it("adds per-image copy buttons only for X", async () => {
+    const substack = await run("![dot](tiny.png)");
+    const x = await run("![dot](tiny.png)", "x");
+    expect(substack.body).not.toContain("copy-image-btn");
+    expect(x.body).toMatch(/<div class="image-container"><img [^>]+><button class="copy-image-btn"/);
+    expect(x.body).not.toContain("<p><div");
+  });
+
+  it("wraps output in the target's preview page", async () => {
+    const { html } = await run("hello", "x");
+    expect(html).toContain("<title>md2wb — X Articles Preview</title>");
+    expect(html).toContain('id="copy-btn"');
+  });
+
+  it("strips front matter and HTML comments", async () => {
+    const { body } = await run("---\ntitle: T\nlanguage: rust\n---\n\n<!-- draft note -->\n\nText");
+    expect(body).not.toContain("title: T");
+    expect(body).not.toContain("draft note");
+  });
+
+  it("rejects unknown targets", async () => {
+    await expect(convert("x", { target: "medium" as "x" })).rejects.toThrow(/Unknown target/);
+  });
+});

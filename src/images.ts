@@ -1,0 +1,97 @@
+// Inline every <img> as a data URI so the copied HTML carries the pixels,
+// and (for X) wrap images with a "Copy image" button for manual pasting.
+
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { Element, ElementContent, Parents, Root } from "hast";
+import { visitParents } from "unist-util-visit-parents";
+
+const MIME_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
+};
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 15_000;
+
+export interface ImageOptions {
+  baseDir: string;
+  copyable: boolean;
+  warn: (message: string) => void;
+}
+
+export async function processImages(tree: Root, options: ImageOptions): Promise<void> {
+  const images: Array<{ node: Element; ancestors: Parents[] }> = [];
+  visitParents(tree, "element", (node, ancestors) => {
+    if (node.tagName === "img") images.push({ node, ancestors: [...ancestors] });
+  });
+
+  for (const { node, ancestors } of images) {
+    const parent = ancestors.at(-1)!;
+    const src = String(node.properties.src ?? "");
+    let dataUri: string;
+    try {
+      dataUri = src.startsWith("data:") ? src : await toDataUri(src, options.baseDir);
+    } catch (error) {
+      options.warn(`dropping image "${src}": ${(error as Error).message}`);
+      replaceChild(parent, node, []);
+      continue;
+    }
+    node.properties.src = dataUri;
+    if (options.copyable) wrapCopyable(node, ancestors);
+  }
+}
+
+async function toDataUri(src: string, baseDir: string): Promise<string> {
+  if (/^https?:\/\//i.test(src)) {
+    const response = await fetch(src, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const mime = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
+    if (!mime.startsWith("image/")) throw new Error(`not an image (${mime || "no content type"})`);
+    return encode(Buffer.from(await response.arrayBuffer()), mime);
+  }
+  if (!src) throw new Error("empty src");
+  const file = path.resolve(baseDir, decodeURIComponent(src));
+  const mime = MIME_BY_EXT[path.extname(file).toLowerCase()];
+  if (!mime) throw new Error("unsupported image type");
+  return encode(await readFile(file), mime);
+}
+
+function encode(data: Buffer, mime: string): string {
+  if (data.length > MAX_IMAGE_BYTES) throw new Error(`larger than ${MAX_IMAGE_BYTES} bytes`);
+  return `data:${mime};base64,${data.toString("base64")}`;
+}
+
+function wrapCopyable(img: Element, ancestors: Parents[]): void {
+  const container: Element = {
+    type: "element",
+    tagName: "div",
+    properties: { className: ["image-container"] },
+    children: [
+      img,
+      {
+        type: "element",
+        tagName: "button",
+        properties: { className: ["copy-image-btn"], type: "button" },
+        children: [{ type: "text", value: "Copy image" }],
+      },
+    ],
+  };
+  const parent = ancestors.at(-1)!;
+  const grandparent = ancestors.at(-2);
+  // A <div> cannot sit inside a <p>, so a lone image replaces its paragraph.
+  const alone =
+    parent.type === "element" &&
+    parent.tagName === "p" &&
+    parent.children.every((c) => c === img || (c.type === "text" && !c.value.trim()));
+  if (alone && grandparent) replaceChild(grandparent, parent, [container]);
+  else replaceChild(parent, img, [container]);
+}
+
+function replaceChild(parent: Parents, child: Element, replacement: ElementContent[]): void {
+  const children = parent.children as ElementContent[];
+  children.splice(children.indexOf(child), 1, ...replacement);
+}
