@@ -2,13 +2,20 @@
 // rendering to PNG. MathJax runs in-process, so no TeX install is needed.
 
 import MathJax, { type MathJaxInstance } from "mathjax";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { visit } from "unist-util-visit";
 import type { MathStyle } from "./targets.js";
 import { svgToPng } from "./raster.js";
 
-// Fenced and inline code must never be touched by the math rewrites below.
-const CODE_RE = /^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$|(`+)[^\n]+?\2/gm;
-const DISPLAY_RE =
-  /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{(equation|align|gather|multline|eqnarray)(\*?)\}[\s\S]*?\\end\{\1\2\}/g;
+// TeX math cannot span a blank line, so neither can a match; this also stops
+// a stray `\[` from swallowing everything up to a later `\]`.
+const BODY = String.raw`(?:(?!\n[ \t]*\n)[\s\S])`;
+const DISPLAY_RE = new RegExp(
+  String.raw`\$\$${BODY}+?\$\$|\\\[${BODY}+?\\\]|\\begin\{(equation|align|gather|multline|eqnarray)(\*?)\}${BODY}*?\\end\{\1\2\}`,
+  "g",
+);
+const DISPLAY_DOLLARS_RE = new RegExp(String.raw`\$\$(${BODY}+?)\$\$`, "g");
 const LABEL_RE = /(?<!\\)\\label\{([^}]+)\}/g;
 const EQREF_RE = /(?<!\\)\\eqref\{([^}]+)\}/g;
 const PLACEHOLDER_RE = /\u0000(\d+)\u0000/g;
@@ -26,8 +33,19 @@ export interface PreparedMarkdown {
  * its own lines; inside a paragraph it is Markdown's escaped brackets.
  */
 export function prepareMath(source: string): PreparedMarkdown {
+  // Code (fenced, indented or inline) must never be touched by the rewrites
+  // below; let the Markdown parser find it and swap it for placeholders.
   const stash: string[] = [];
-  let text = source.replace(CODE_RE, (code) => `\u0000${stash.push(code) - 1}\u0000`);
+  let text = "";
+  let last = 0;
+  visit(unified().use(remarkParse).parse(source), (node) => {
+    if ((node.type === "code" || node.type === "inlineCode") && node.position) {
+      const { start, end } = node.position;
+      text += `${source.slice(last, start.offset)}\u0000${stash.push(source.slice(start.offset, end.offset)) - 1}\u0000`;
+      last = end.offset!;
+    }
+  });
+  text += source.slice(last);
 
   text = text.replace(DISPLAY_RE, (match, _env, _star, offset: number, whole: string) => {
     if (match.startsWith("$$")) return match;
@@ -47,7 +65,7 @@ export function prepareMath(source: string): PreparedMarkdown {
   // Each image shows one number, so all labels in a block share it.
   const labels = new Map<string, number>();
   let count = 0;
-  for (const [, latex] of text.matchAll(/\$\$([\s\S]+?)\$\$/g)) {
+  for (const [, latex] of text.matchAll(DISPLAY_DOLLARS_RE)) {
     const fresh = [...latex!.matchAll(LABEL_RE)].map(([, label]) => label!).filter((label) => !labels.has(label));
     if (fresh.length) count++;
     for (const label of fresh) labels.set(label, count);

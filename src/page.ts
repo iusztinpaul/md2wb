@@ -33,27 +33,28 @@ async function copyContent() {
   setTimeout(function () { btn.textContent = "\\u{1F4CB} Copy to clipboard"; }, 2500);
 }`;
 
-// Browsers only put PNG images on the clipboard, so other formats are converted.
+// Browsers only put PNG images on the clipboard, so every image is redrawn
+// as PNG. The write starts synchronously with a pending blob, which keeps
+// Safari treating it as part of the click.
 const COPY_IMAGE_SCRIPT = `
-async function toPng(blob) {
-  if (blob.type === "image/png") return blob;
-  var bitmap = await createImageBitmap(blob);
-  var canvas = document.createElement("canvas");
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  canvas.getContext("2d").drawImage(bitmap, 0, 0);
-  return new Promise(function (resolve) { canvas.toBlob(resolve, "image/png"); });
-}
-async function copyImage(img, button) {
-  try {
-    var blob = await toPng(await (await fetch(img.src)).blob());
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    button.textContent = "\\u2713 Copied";
-    button.classList.add("copied");
-  } catch (err) {
-    console.error("Failed to copy image:", err);
-    button.textContent = "Failed";
-  }
+function copyImage(img, button) {
+  var png = new Promise(function (resolve, reject) {
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+    canvas.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error("toBlob failed")); }, "image/png");
+  });
+  navigator.clipboard.write([new ClipboardItem({ "image/png": png })]).then(
+    function () {
+      button.textContent = "\\u2713 Copied";
+      button.classList.add("copied");
+    },
+    function (err) {
+      console.error("Failed to copy image:", err);
+      button.textContent = "Failed";
+    },
+  );
   setTimeout(function () {
     button.textContent = "Copy image";
     button.classList.remove("copied");

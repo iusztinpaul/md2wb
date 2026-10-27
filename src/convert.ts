@@ -39,11 +39,13 @@ const FRONT_MATTER_RE = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)
 const DIRECTIVE_RE = /<!--\s*(?:md2wb|nb2wb)\s*:\s*(.+?)\s*-->/g;
 // Any of these between a directive and a code block cancels the directive.
 const BLOCKS = new Set(["paragraph", "heading", "list", "blockquote", "table", "math", "thematicBreak", "html"]);
+// Directives are block-level comments, never comments inside a paragraph.
+const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinition"]);
 
 export async function convert(markdown: string, options: ConvertOptions = {}): Promise<string> {
   const target = getTarget(options.target ?? "substack");
   const warn = options.onWarning ?? ((message: string) => console.warn(`md2wb: ${message}`));
-  const { language, body } = splitFrontMatter(markdown);
+  const { language, body } = splitFrontMatter(markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"));
   const { markdown: source, labels } = prepareMath(body);
 
   const remark = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkBreaks);
@@ -102,8 +104,8 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
     });
 
-  visit(tree, (node) => {
-    if (node.type === "html") {
+  visit(tree, (node, _, parent) => {
+    if (node.type === "html" && FLOW_PARENTS.has(parent?.type ?? "root")) {
       const tags = directiveTags(node.value);
       if (tags) {
         pending.push(...tags);
@@ -146,16 +148,11 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
       case "inlineMath": {
         const latex = node.value;
-        const start = node.position?.start.offset;
-        const end = node.position?.end.offset;
-        const raw = start === undefined || end === undefined ? `$${latex}$` : ctx.source.slice(start, end);
-        if (!raw.startsWith("$$")) {
-          replaceNode(
-            node,
-            isTexSpan(raw, ctx.source[end ?? -1])
-              ? { type: "html", value: inlineMathToHtml(latex) }
-              : { type: "text", value: raw },
-          );
+        const { kind, raw } = inlineMathKind(node, ctx.source);
+        if (kind === "text") {
+          replaceNode(node, { type: "text", value: raw });
+        } else if (kind === "inline") {
+          replaceNode(node, { type: "html", value: inlineMathToHtml(latex) });
         } else if (latex.trim()) {
           // `$$...$$` inside a paragraph is still display math.
           addJob(
@@ -173,7 +170,7 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       case "table": {
         addJob(
           "table",
-          async () => renderTable(tableCells(node), ctx.target.table),
+          async () => renderTable(tableCells(node, ctx.source), ctx.target.table),
           (png) => replaceNode(node, paragraph(image(png, "table"))),
         );
         return SKIP;
@@ -192,13 +189,22 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
   prune(tree, removed, displayImages);
 }
 
+type InlineMath = Extract<Nodes, { type: "inlineMath" }>;
+
 /**
- * Pandoc's rule for telling `$x$` from prices: no space just inside the
- * dollars and no digit right after the closing one ("$5 and $10" is text).
+ * Judge a remark-math `inlineMath` node from its source: `$$...$$` is display
+ * math, and Pandoc's rule tells `$x$` from prices (no space just inside the
+ * dollars, no digit right after the closing one), so "$5 and $10" is text.
  */
-function isTexSpan(raw: string, next: string | undefined): boolean {
+function inlineMathKind(node: InlineMath, source: string): { kind: "display" | "inline" | "text"; raw: string } {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  if (start === undefined || end === undefined) return { kind: "inline", raw: `$${node.value}$` };
+  const raw = source.slice(start, end);
+  if (raw.startsWith("$$")) return { kind: "display", raw };
   const inner = raw.slice(1, -1);
-  return /^\S/.test(inner) && /\S$/.test(inner) && !/\d/.test(next ?? "");
+  const tex = /^\S/.test(inner) && /\S$/.test(inner) && !/\d/.test(source[end] ?? "");
+  return { kind: tex ? "inline" : "text", raw };
 }
 
 function directiveTags(html: string): string[] | undefined {
@@ -229,29 +235,31 @@ function replaceNode(node: Nodes, replacement: Nodes): void {
   Object.assign(node, replacement);
 }
 
-function tableCells(table: Table): TableCell[][] {
+function tableCells(table: Table, source: string): TableCell[][] {
   return table.children.map((row, r) =>
     row.children.map((cell, c) => ({
-      text: cellText(cell).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim(),
+      text: cellText(cell, source).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim(),
       align: table.align?.[c] ?? "left",
       header: r === 0,
     })),
   );
 }
 
-function cellText(node: Nodes): string {
+function cellText(node: Nodes, source: string): string {
   switch (node.type) {
     case "text":
     case "inlineCode":
       return node.value;
-    case "inlineMath":
-      return inlineMathToText(node.value);
+    case "inlineMath": {
+      const { kind, raw } = inlineMathKind(node, source);
+      return kind === "text" ? raw : inlineMathToText(node.value);
+    }
     case "break":
       return "\n";
     case "html":
       return node.value.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
     default:
-      return "children" in node ? node.children.map(cellText).join("") : "";
+      return "children" in node ? node.children.map((child) => cellText(child, source)).join("") : "";
   }
 }
 

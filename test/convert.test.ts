@@ -45,6 +45,11 @@ describe("convert", () => {
     expect(images(body)).toMatchObject([{ alt: "code" }]);
   });
 
+  it("ignores directive comments inside a paragraph", async () => {
+    const { body } = await run("text <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
+    expect(images(body)).toMatchObject([{ alt: "code" }]);
+  });
+
   it("renders display math as numbered images and inline math as text", async () => {
     const { body, warnings } = await run(
       "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2 \\label{eq:p}$$\n\nBy \\eqref{eq:p}, and\n\n\\[\nx\n\\]",
@@ -109,6 +114,12 @@ describe("convert", () => {
     const { html } = await run("hello", "x");
     expect(html).toContain("<title>md2wb — X Articles Preview</title>");
     expect(html).toContain('id="copy-btn"');
+  });
+
+  it("accepts CRLF line endings and a byte-order mark", async () => {
+    const { body } = await run("\uFEFF---\r\ntitle: Hi\r\n---\r\n\r\n\\[\r\nx = 1\r\n\\]\r\n");
+    expect(body).not.toContain("title: Hi");
+    expect(images(body)).toMatchObject([{ alt: "math" }]);
   });
 
   it("does not mistake a leading thematic break for front matter", async () => {

@@ -33,6 +33,19 @@ describe("inlineMathToHtml", () => {
     expect(inlineMathToHtml("a < b > c & d")).toBe("<em>a</em> &lt; <em>b</em> &gt; <em>c</em> &amp; <em>d</em>");
   });
 
+  it("keeps escaped braces", () => {
+    expect(inlineMathToHtml(String.raw`S = \{1, 2\}`)).toBe("<em>S</em> = {1, 2}");
+  });
+
+  it("keeps \\text and \\operatorname arguments upright", () => {
+    expect(inlineMathToHtml(String.raw`\operatorname{sgn}(x)`)).toBe("sgn(<em>x</em>)");
+    expect(inlineMathToHtml(String.raw`\text{if } x > 0`)).toBe("if  <em>x</em> &gt; 0");
+  });
+
+  it("expands \\dfrac and \\tfrac like \\frac", () => {
+    expect(inlineMathToHtml(String.raw`\dfrac{a}{b} + \tfrac12`)).toBe("(<em>a</em>)/(<em>b</em>) + (1)/(2)");
+  });
+
   it("converts symbols through unicodeit", () => {
     expect(inlineMathToHtml(String.raw`\sum_i \int f \leq \infty`)).toContain("∑");
     expect(inlineMathToHtml(String.raw`x \in \mathbb{R}`)).toContain("ℝ");

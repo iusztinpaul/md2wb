@@ -31,6 +31,18 @@ describe("prepareMath", () => {
     expect(prepareMath(src).markdown).toBe(src);
   });
 
+  it("never rewrites indented code", () => {
+    const src = "Code:\n\n    \\[\n    code\n    \\]\n";
+    expect(prepareMath(src).markdown).toBe(src);
+  });
+
+  it("does not let a stray \\[ swallow later paragraphs", () => {
+    const src = "Escape \\[ here.\n\n\\begin{equation}a \\label{e}\\end{equation}\n\nand \\] there. See \\eqref{e}";
+    const { markdown, labels } = prepareMath(src);
+    expect([...labels]).toEqual([["e", 1]]);
+    expect(markdown).toContain("See (1)");
+  });
+
   it("numbers labels in document order and resolves references", () => {
     const src = "$$a \\label{first}$$\n\n$$b \\label{second}$$\n\nSee \\eqref{second}, \\eqref{first} and \\eqref{missing}.";
     const { markdown, labels } = prepareMath(src);

@@ -34,23 +34,41 @@ const FUNCTION_COMMAND_RE = new RegExp(
 );
 
 // Private-use placeholders: the user's <, > and & stay out of the tag-aware
-// steps, and braced scripts are marked so they convert all-or-nothing.
+// steps, braced scripts are marked so they convert all-or-nothing, escaped
+// braces survive brace stripping, and upright text is kept from italics.
 const LT = "\uE000";
 const GT = "\uE001";
 const AMP = "\uE002";
 const SUP = "\uE003";
 const SUB = "\uE004";
 const END = "\uE005";
+const LBRACE = "\uE006";
+const RBRACE = "\uE007";
+const UPRIGHT = "\uE008";
+
+// Commands whose argument is upright text rather than math.
+const TEXT_COMMAND_RE = /\\(?:text|textrm|mathrm|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
 
 /** Convert one inline TeX expression (without the dollars) to an HTML fragment. */
 export function inlineMathToHtml(latex: string): string {
-  let text = expandFrac(latex.trim()).replace(FUNCTION_COMMAND_RE, "$1");
+  let text = latex
+    .trim()
+    .replaceAll("\\{", LBRACE)
+    .replaceAll("\\}", RBRACE)
+    .replace(TEXT_COMMAND_RE, (_, words: string) => `${UPRIGHT}${words}\uE009`);
+  text = expandFrac(text).replace(FUNCTION_COMMAND_RE, "$1");
   // unicodeit maps whichever script characters it can (x_{complex} -> xcₒₘₚₗₑₓ),
   // so braced scripts are shielded from it and handled by scriptText().
   text = text.replace(/([_^])\{([^}]*)\}/g, (_, op: string, inner: string) => (op === "^" ? SUP : SUB) + toUnicode(inner) + END);
   text = toUnicode(text).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
-  return italicize(text).replaceAll(AMP, "&amp;").replaceAll(LT, "&lt;").replaceAll(GT, "&gt;");
+  return italicize(text)
+    .replace(/[\uE008\uE009]/g, "")
+    .replaceAll(LBRACE, "{")
+    .replaceAll(RBRACE, "}")
+    .replaceAll(AMP, "&amp;")
+    .replaceAll(LT, "&lt;")
+    .replaceAll(GT, "&gt;");
 }
 
 function toUnicode(latex: string): string {
@@ -81,13 +99,15 @@ function braceArg(s: string, pos: number): [string, number] {
   return [s.slice(pos + 1), s.length];
 }
 
-/** `\frac{a}{b}` -> `(a)/(b)`; nested fractions are left for a later pass. */
+/** `\frac{a}{b}` (also d/t/cfrac) -> `(a)/(b)`; nested fractions are left as is. */
 export function expandFrac(latex: string): string {
+  const frac = /\\[dtc]?frac(?![A-Za-z])/y;
   let out = "";
   let i = 0;
   while (i < latex.length) {
-    if (latex.startsWith("\\frac", i)) {
-      i += 5;
+    frac.lastIndex = i;
+    if (frac.test(latex)) {
+      i = frac.lastIndex;
       while (latex[i] === " ") i++;
       const [num, afterNum] = braceArg(latex, i);
       i = afterNum;
@@ -124,8 +144,8 @@ const LETTER_RE = /\p{L}/u;
 /** Italicize variables and Greek letters, leaving tags and function names alone. */
 export function italicize(html: string): string {
   return html
-    .split(/(<[^>]+>)/)
-    .map((part) => (part.startsWith("<") ? part : italicizeText(part)))
+    .split(/(<[^>]+>|\uE008[^\uE009]*\uE009)/)
+    .map((part) => (part.startsWith("<") || part.startsWith(UPRIGHT) ? part : italicizeText(part)))
     .join("");
 }
 
