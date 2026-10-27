@@ -1,0 +1,67 @@
+{
+  "name": "md2wb",
+  "version": "0.1.0",
+  "description": "Write in Markdown. Publish to Substack and X Articles.",
+  "keywords": [
+    "markdown",
+    "substack",
+    "x-articles",
+    "latex",
+    "mathjax",
+    "converter",
+    "technical-writing"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iusztinpaul/md2wb.git"
+  },
+  "type": "module",
+  "bin": {
+    "md2wb": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc",
+    "test": "vitest run --testTimeout=30000",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "dejavu-fonts-ttf": "^2.37.3",
+    "mathjax": "^4.1.3",
+    "opentype.js": "^2.0.0",
+    "rehype-raw": "^7.0.0",
+    "rehype-stringify": "^10.0.1",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unicodeit": "^0.7.5",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.2.0",
+    "unist-util-visit-parents": "^6.1.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/hast": "^3.0.5",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
