@@ -115,6 +115,7 @@ body {
 img { max-width: 100%; height: auto; display: block; }
 img.code-img { border-radius: var(--code-image-radius); }
 .image-container { position: relative; margin: 0.5em 0; }
+span.image-container { display: inline-block; }
 .copy-image-btn {
   position: absolute;
   top: 8px;

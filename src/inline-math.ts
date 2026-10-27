@@ -51,21 +51,27 @@ const TEXT_COMMAND_RE = /\\(?:text|textrm|mathrm|operatorname\*?|mbox)\s*\{([^{}
 
 /** Convert one inline TeX expression (without the dollars) to an HTML fragment. */
 export function inlineMathToHtml(latex: string): string {
+  // \text{...} contents are set aside so no math processing touches them.
+  const upright: string[] = [];
   let text = latex
     .trim()
     .replaceAll("\\{", LBRACE)
     .replaceAll("\\}", RBRACE)
-    .replace(TEXT_COMMAND_RE, (_, words: string) => `${UPRIGHT}${words}\uE009`);
+    .replace(TEXT_COMMAND_RE, (_, words: string) => `${UPRIGHT}${upright.push(words) - 1}\uE009`);
   text = expandFrac(text).replace(FUNCTION_COMMAND_RE, "$1");
   text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
   return italicize(text)
-    .replace(/[\uE008\uE009]/g, "")
+    .replace(/\uE008(\d+)\uE009/g, (_, i: string) => escapeHtml(upright[Number(i)]!))
     .replaceAll(LBRACE, "{")
     .replaceAll(RBRACE, "}")
     .replaceAll(AMP, "&amp;")
     .replaceAll(LT, "&lt;")
     .replaceAll(GT, "&gt;");
+}
+
+function escapeHtml(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function toUnicode(latex: string): string {
@@ -89,6 +95,11 @@ function shieldScripts(text: string): string {
     if ((ch === "^" || ch === "_") && text[i + 1] === "{") {
       const [inner, next] = braceArg(text, i + 1);
       out += (ch === "^" ? SUP : SUB) + toUnicode(shieldScripts(inner)) + END;
+      i = next;
+    } else if ((ch === "^" || ch === "_") && text[i + 1] === UPRIGHT) {
+      // A \text{...} script such as A^\text{T}.
+      const next = text.indexOf("\uE009", i) + 1;
+      out += (ch === "^" ? SUP : SUB) + text.slice(i + 1, next) + END;
       i = next;
     } else {
       out += ch;
@@ -159,8 +170,8 @@ function expandScripts(text: string): string {
     );
   }
   return text
-    .replace(/\^([^\s{])/gu, (_, ch: string) => SUPERSCRIPT[ch] ?? `<sup>${ch}</sup>`)
-    .replace(/_([^\s{])/gu, (_, ch: string) => SUBSCRIPT[ch] ?? `<sub>${ch}</sub>`);
+    .replace(/\^([^\s{\\])/gu, (_, ch: string) => SUPERSCRIPT[ch] ?? `<sup>${ch}</sup>`)
+    .replace(/_([^\s{\\])/gu, (_, ch: string) => SUBSCRIPT[ch] ?? `<sub>${ch}</sub>`);
 }
 
 /** Italicize variables and Greek letters, leaving tags and function names alone. */

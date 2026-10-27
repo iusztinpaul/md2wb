@@ -58,7 +58,11 @@ export function prepareMath(source: string): PreparedMarkdown {
     // On its own lines (also inside a blockquote): a `$$` block that keeps the
     // author's line prefixes. Inside a paragraph: inline `$$...$$`.
     if (/^[ \t>]*$/.test(indent) && /^[ \t]*$/.test(rest)) {
-      return bracket ? `$$${body}$$` : `$$\n${indent}${match}\n${indent}$$`;
+      if (!bracket) return `$$\n${indent}${match}\n${indent}$$`;
+      // The `$$` fences must sit on lines of their own.
+      const head = /^[ \t]*\n/.test(body) ? "" : `\n${indent}`;
+      const tail = /\n[ \t>]*$/.test(body) ? "" : `\n${indent}`;
+      return `$$${head}${body}${tail}$$`;
     }
     return bracket ? match : `$$${body}$$`;
   });

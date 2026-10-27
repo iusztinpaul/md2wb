@@ -69,17 +69,17 @@ export async function convert(markdown: string, options: ConvertOptions = {}): P
 function splitFrontMatter(markdown: string): { language?: string; body: string } {
   const match = FRONT_MATTER_RE.exec(markdown);
   const yaml = match?.[1] ?? "";
-  // A leading `---` may just be a thematic break: only strip a block that
-  // starts right after it and parses as a YAML mapping.
-  if (!match || !/^\S/.test(yaml)) return { body: markdown };
+  // A leading `---` may just be a thematic break: only strip a block that is
+  // empty or starts right after it, and parses as a YAML mapping (or nothing).
+  if (!match || (yaml && !/^\S/.test(yaml))) return { body: markdown };
   let data: unknown;
   try {
     data = parseYaml(yaml);
   } catch {
     return { body: markdown };
   }
-  if (!data || typeof data !== "object" || Array.isArray(data)) return { body: markdown };
-  const language = (data as { language?: unknown }).language;
+  if (data !== null && (typeof data !== "object" || Array.isArray(data))) return { body: markdown };
+  const language = (data as { language?: unknown } | null)?.language;
   return { language: typeof language === "string" ? language : undefined, body: markdown.slice(match[0].length) };
 }
 
@@ -205,7 +205,8 @@ function inlineMathKind(node: InlineMath, source: string): { kind: "display" | "
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
   if (start === undefined || end === undefined) return { kind: "inline", raw: `$${node.value}$` };
-  const raw = source.slice(start, end);
+  // Line breaks inside the span drop the container prefixes (`> `, indents).
+  const raw = source.slice(start, end).replace(/\n[ \t>]*/g, "\n");
   if (raw.startsWith("$$")) return { kind: "display", raw };
   const inner = raw.slice(1, -1);
   const tex = /^\S/.test(inner) && /\S$/.test(inner) && !/\d/.test(source[end] ?? "");

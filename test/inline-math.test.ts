@@ -47,9 +47,15 @@ describe("inlineMathToHtml", () => {
     expect(inlineMathToHtml(String.raw`S = \{1, 2\}`)).toBe("<em>S</em> = {1, 2}");
   });
 
-  it("keeps \\text and \\operatorname arguments upright", () => {
+  it("keeps \\text and \\operatorname arguments upright and untouched", () => {
     expect(inlineMathToHtml(String.raw`\operatorname{sgn}(x)`)).toBe("sgn(<em>x</em>)");
     expect(inlineMathToHtml(String.raw`\text{if } x > 0`)).toBe("if  <em>x</em> &gt; 0");
+    expect(inlineMathToHtml(String.raw`\text{max_len} < n`)).toBe("max_len &lt; <em>n</em>");
+    expect(inlineMathToHtml(String.raw`A^\text{T}`)).toBe("<em>A</em><sup>T</sup>");
+  });
+
+  it("leaves unknown commands after ^ alone", () => {
+    expect(inlineMathToHtml(String.raw`e^\foo`)).toBe(String.raw`<em>e</em>^\foo`);
   });
 
   it("expands \\dfrac and \\tfrac like \\frac", () => {

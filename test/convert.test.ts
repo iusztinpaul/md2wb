@@ -1,3 +1,6 @@
+import { copyFile, mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderCode } from "../src/code.js";
@@ -72,6 +75,18 @@ describe("convert", () => {
     expect(warnings).toEqual([]);
   });
 
+  it("keeps multi-line \\[...\\] blocks from swallowing what follows", async () => {
+    const { body } = await run("\\[ a + b\n= c \\]\n\nAfter paragraph.");
+    expect(images(body)).toMatchObject([{ alt: "math" }]);
+    expect(body).toContain("<p>After paragraph.</p>");
+  });
+
+  it("drops blockquote markers from prices spanning lines", async () => {
+    const { body } = await run("> costs $5 and\n> $10 total");
+    expect(body).toContain("$10 total");
+    expect(body).not.toMatch(/&#x3E;|&gt;/);
+  });
+
   it("leaves prices and escaped brackets as text", async () => {
     const { body } = await run("It costs $5 and $10 today. Escaped \\[1\\] brackets, and $x$.");
     expect(body).toContain("It costs $5 and $10 today. Escaped [1] brackets, and <em>x</em>.");
@@ -113,11 +128,27 @@ describe("convert", () => {
   });
 
   it("embeds remote images served as octet-stream when the extension says image", async () => {
-    const png = Buffer.from(await (await import("node:fs/promises")).readFile(`${fixtures}/tiny.png`));
+    const png = await readFile(`${fixtures}/tiny.png`);
     vi.stubGlobal("fetch", async () => new Response(png, { headers: { "content-type": "application/octet-stream" } }));
     const { body, warnings } = await run("![remote](https://cdn.example.com/fig.png)");
     expect(warnings).toEqual([]);
     expect(images(body)).toMatchObject([{ alt: "remote", width: 2, height: 3 }]);
+  });
+
+  it("loads local images whose names contain %", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "md2wb-"));
+    await copyFile(`${fixtures}/tiny.png`, path.join(dir, "50%off.png"));
+    const warnings: string[] = [];
+    const html = await convert("![sale](50%off.png)", { baseDir: dir, onWarning: (w) => warnings.push(w) });
+    expect(warnings).toEqual([]);
+    expect(images(content(html))).toMatchObject([{ alt: "sale" }]);
+  });
+
+  it("wraps inline X images in a span and leaves linked ones unwrapped", async () => {
+    const inline = await run("See ![a](tiny.png) here.", "x");
+    expect(inline.body).toMatch(/<p>See <span class="image-container"><img [^>]+><button/);
+    const linked = await run("[![a](tiny.png)](https://example.com)", "x");
+    expect(linked.body).not.toContain("copy-image-btn");
   });
 
   it("adds per-image copy buttons only for X", async () => {
@@ -144,6 +175,11 @@ describe("convert", () => {
     const { body } = await run("---\n\nIntro paragraph: here\n\n---\n\nRest");
     expect(body).toContain("Intro paragraph: here");
     expect(body).toContain("Rest");
+  });
+
+  it("strips empty front matter", async () => {
+    const { body } = await run("---\n---\n\nHello");
+    expect(body).not.toContain("<hr>");
   });
 
   it("strips front matter and HTML comments", async () => {

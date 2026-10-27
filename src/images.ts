@@ -58,7 +58,13 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
     return encode(Buffer.from(await response.arrayBuffer()), mime);
   }
   if (!src) throw new Error("empty src");
-  const file = path.resolve(baseDir, decodeURIComponent(src));
+  let name = src;
+  try {
+    name = decodeURIComponent(src);
+  } catch {
+    // A literal % in the file name.
+  }
+  const file = path.resolve(baseDir, name);
   const mime = MIME_BY_EXT[path.extname(file).toLowerCase()];
   if (!mime) throw new Error("unsupported image type");
   return encode(await readFile(file), mime);
@@ -74,9 +80,19 @@ function tooLarge(): never {
 }
 
 function wrapCopyable(img: Element, ancestors: Parents[]): void {
+  // A button cannot sit inside a link, so linked images are only embedded.
+  if (ancestors.some((a) => a.type === "element" && a.tagName === "a")) return;
+  const parent = ancestors.at(-1)!;
+  const grandparent = ancestors.at(-2);
+  const alone =
+    parent.type === "element" &&
+    parent.tagName === "p" &&
+    parent.children.every((c) => c === img || (c.type === "text" && !c.value.trim()));
+  // A lone image replaces its paragraph with a block <div>; an image inside
+  // text gets an inline <span>, since a <div> cannot sit inside a <p>.
   const container: Element = {
     type: "element",
-    tagName: "div",
+    tagName: alone ? "div" : "span",
     properties: { className: ["image-container"] },
     children: [
       img,
@@ -88,13 +104,6 @@ function wrapCopyable(img: Element, ancestors: Parents[]): void {
       },
     ],
   };
-  const parent = ancestors.at(-1)!;
-  const grandparent = ancestors.at(-2);
-  // A <div> cannot sit inside a <p>, so a lone image replaces its paragraph.
-  const alone =
-    parent.type === "element" &&
-    parent.tagName === "p" &&
-    parent.children.every((c) => c === img || (c.type === "text" && !c.value.trim()));
   if (alone && grandparent) replaceChild(grandparent, parent, [container]);
   else replaceChild(parent, img, [container]);
 }
