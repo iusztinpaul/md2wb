@@ -67,8 +67,8 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
   } else {
     // The path as written, else without a ?query or #fragment.
     const name = src.replace(/^file:/i, "");
-    const candidates = [name, name.replace(/[?#].*$/, "")].map((n) => path.resolve(baseDir, decodePath(n)));
-    file = candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
+    const candidates = [...new Set([name, name.replace(/[?#].*$/, "")])].map((n) => path.resolve(baseDir, decodePath(n)));
+    file = candidates.find((candidate) => existsSync(candidate)) ?? candidates.at(-1)!;
   }
   const mime = MIME_BY_EXT[path.extname(file).toLowerCase()];
   if (!mime) throw new Error("unsupported image type");

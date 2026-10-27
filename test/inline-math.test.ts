@@ -75,7 +75,17 @@ describe("inlineMathToHtml", () => {
     expect(inlineMathToText(String.raw`\text{the "best"}`)).toBe('the "best"');
   });
 
+  it("keeps scripts readable in table text when they hold styled text", () => {
+    expect(inlineMathToText(String.raw`A^\textbf{T}`)).toBe("A^T");
+  });
+
+  it("writes \\pmod as (mod n)", () => {
+    expect(inlineMathToHtml(String.raw`a \equiv b \pmod{n}`)).toBe("<em>a</em> ≡ <em>b</em> (mod <em>n</em>)");
+  });
+
   it("keeps function names apart from neighbouring letters", () => {
+    expect(inlineMathToHtml(String.raw`\sin\theta`)).toBe("sin <em>θ</em>");
+    expect(inlineMathToHtml(String.raw`{a}\sin x`)).toBe("<em>a</em> sin <em>x</em>");
     expect(inlineMathToHtml(String.raw`x\bmod 2`)).toBe("<em>x</em> mod 2");
     expect(inlineMathToHtml(String.raw`a\sin x`)).toBe("<em>a</em> sin <em>x</em>");
     expect(inlineMathToHtml(String.raw`\sin{x}`)).toBe("sin <em>x</em>");

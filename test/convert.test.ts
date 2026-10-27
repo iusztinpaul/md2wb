@@ -166,6 +166,8 @@ describe("convert", () => {
     expect(images(body)).toMatchObject([{ alt: "dot", width: 2, height: 3 }]);
     expect(body).not.toContain("missing.png");
     expect(warnings).toEqual([expect.stringContaining("missing.png")]);
+    const query = await run("![gone](missing.png?v=2)");
+    expect(query.warnings).toEqual([expect.stringContaining("ENOENT")]);
   });
 
   it("fetches protocol-relative image URLs over https", async () => {

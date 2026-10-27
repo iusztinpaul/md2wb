@@ -91,12 +91,16 @@ export function inlineMathToHtml(latex: string): string {
       if (tag) html = `<${tag}>${html}</${tag}>`;
       return `${UPRIGHT}${upright.push(html) - 1}${UPRIGHT_END}`;
     });
-  text = expandFrac(text.replace(DROPPED_RE, "").replace(RENAMED_RE, (_, name: string) => RENAMED[name]!));
+  text = text
+    .replace(DROPPED_RE, "")
+    .replace(/\\pmod\s*\{([^{}]*)\}/g, "(\\mod $1)")
+    .replace(RENAMED_RE, (_, name: string) => RENAMED[name]!);
+  text = expandFrac(text);
   // Function names get a space where they would otherwise merge with a
   // neighbouring letter (x\bmod 2, a\sin{x}).
   text = text.replace(FUNCTION_COMMAND_RE, (match, name: string, offset: number, whole: string) => {
-    const before = /[A-Za-z0-9]/.test(whole[offset - 1] ?? "") ? " " : "";
-    const after = /[A-Za-z{]/.test(whole[offset + match.length] ?? "") ? " " : "";
+    const before = /[A-Za-z0-9}]/.test(whole[offset - 1] ?? "") ? " " : "";
+    const after = /[A-Za-z{\\]/.test(whole[offset + match.length] ?? "") ? " " : "";
     return before + name + after;
   });
   text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
@@ -148,7 +152,7 @@ function shieldScripts(text: string): string {
 
 /** Plain-text variant, for places that cannot hold markup (table images). */
 export function inlineMathToText(latex: string): string {
-  let text = inlineMathToHtml(latex).replace(/<\/?em>/g, "");
+  let text = inlineMathToHtml(latex).replace(/<\/?(?:em|strong)>/g, "");
   // Scripts with no Unicode form become ^x / _(xy); innermost first.
   const script = /<(sup|sub)>([^<]*)<\/\1>/;
   while (script.test(text)) {
