@@ -7,14 +7,14 @@ import { escapeXml } from "./raster.js";
 
 const SUPERSCRIPT: Record<string, string> = {
   "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
-  "+": "⁺", "-": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
+  "+": "⁺", "-": "⁻", "−": "⁻", "=": "⁼", "(": "⁽", ")": "⁾",
   a: "ᵃ", b: "ᵇ", c: "ᶜ", d: "ᵈ", e: "ᵉ", f: "ᶠ", g: "ᵍ", h: "ʰ", i: "ⁱ", j: "ʲ", k: "ᵏ", l: "ˡ", m: "ᵐ",
   n: "ⁿ", o: "ᵒ", p: "ᵖ", r: "ʳ", s: "ˢ", t: "ᵗ", u: "ᵘ", v: "ᵛ", w: "ʷ", x: "ˣ", y: "ʸ", z: "ᶻ",
 };
 
 const SUBSCRIPT: Record<string, string> = {
   "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
-  "+": "₊", "-": "₋", "=": "₌", "(": "₍", ")": "₎",
+  "+": "₊", "-": "₋", "−": "₋", "=": "₌", "(": "₍", ")": "₎",
   a: "ₐ", e: "ₑ", h: "ₕ", k: "ₖ", l: "ₗ", m: "ₘ", n: "ₙ", o: "ₒ", p: "ₚ", s: "ₛ", t: "ₜ", x: "ₓ",
 };
 
@@ -48,6 +48,22 @@ const RBRACE = "\uE007";
 const UPRIGHT = "\uE008";
 const UPRIGHT_END = "\uE009";
 
+// Commands unicodeit does not know. Several would be mangled by its prefix
+// matching (\left( becomes ≤ft(, \lvert becomes łvert), so they are dropped
+// (sizing, limits, styles) or renamed first.
+const DROPPED_RE =
+  /\\(?:left|right|middle|[bB]igg?[lrm]?)(?![A-Za-z])\.?|\\(?:no)?limits(?![A-Za-z])|\\(?:display|text|script)style(?![A-Za-z])/g;
+const RENAMED: Record<string, string> = {
+  lvert: "|",
+  rvert: "|",
+  lVert: "‖",
+  rVert: "‖",
+  dots: "…",
+  boldsymbol: "\\mathbf",
+  bm: "\\mathbf",
+};
+const RENAMED_RE = new RegExp(`\\\\(${Object.keys(RENAMED).join("|")})(?![A-Za-z])`, "g");
+
 // Commands whose argument is upright text rather than math.
 const TEXT_COMMAND_RE = /\\(?:text|textrm|mathrm|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
 
@@ -64,7 +80,8 @@ export function inlineMathToHtml(latex: string): string {
       const symbols = words.replace(/\\(?:[A-Za-z]+|[^A-Za-z])/g, (command) => toUnicode(command));
       return `${UPRIGHT}${upright.push(symbols) - 1}${UPRIGHT_END}`;
     });
-  text = expandFrac(text).replace(FUNCTION_COMMAND_RE, "$1");
+  text = expandFrac(text.replace(DROPPED_RE, "").replace(RENAMED_RE, (_, name: string) => RENAMED[name]!));
+  text = text.replace(FUNCTION_COMMAND_RE, "$1");
   text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
   return italicize(text)
@@ -114,7 +131,16 @@ function shieldScripts(text: string): string {
 
 /** Plain-text variant, for places that cannot hold markup (table images). */
 export function inlineMathToText(latex: string): string {
-  return inlineMathToHtml(latex)
+  let text = inlineMathToHtml(latex).replace(/<\/?em>/g, "");
+  // Scripts with no Unicode form become ^x / _(xy); innermost first.
+  const script = /<(sup|sub)>([^<]*)<\/\1>/;
+  while (script.test(text)) {
+    text = text.replace(script, (_, tag: string, inner: string) => {
+      const mark = tag === "sup" ? "^" : "_";
+      return [...inner].length > 1 ? `${mark}(${inner})` : mark + inner;
+    });
+  }
+  return text
     .replace(/<[^>]+>/g, "")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")

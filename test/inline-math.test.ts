@@ -60,6 +60,17 @@ describe("inlineMathToHtml", () => {
     expect(inlineMathToHtml(String.raw`\frac\text{a}b`)).toBe("(a)/(<em>b</em>)");
   });
 
+  it("handles delimiters, limits and other commands unicodeit lacks", () => {
+    expect(inlineMathToHtml(String.raw`\left( x \right)`)).toBe("( <em>x</em> )");
+    expect(inlineMathToHtml(String.raw`\lvert x \rvert`)).toBe("| <em>x</em> |");
+    expect(inlineMathToHtml(String.raw`\sum\limits_i`)).toBe("∑ᵢ");
+    expect(inlineMathToHtml(String.raw`\bm{x} + a \dots`)).toBe("𝐱 + <em>a</em> …");
+  });
+
+  it("uses Unicode for scripts with a minus sign", () => {
+    expect(inlineMathToHtml("x^{-1}")).toBe("<em>x</em>⁻¹");
+  });
+
   it("leaves unknown commands after ^ alone", () => {
     expect(inlineMathToHtml(String.raw`e^\foo`)).toBe(String.raw`<em>e</em>^\foo`);
   });
@@ -75,9 +86,14 @@ describe("inlineMathToHtml", () => {
 });
 
 describe("inlineMathToText", () => {
+  it("writes scripts without a Unicode form as ^x / _(xy)", () => {
+    expect(inlineMathToText(String.raw`e^{i\pi} + x_{y}`)).toBe("e^(iπ) + x_y");
+    expect(inlineMathToText("10^{-3}")).toBe("10⁻³");
+  });
+
   it("strips markup and decodes entities", () => {
     expect(inlineMathToText("a < x_1")).toBe("a < x₁");
-    expect(inlineMathToText("x_{complex}")).toBe("xcomplex");
+    expect(inlineMathToText("x_{q} < 1")).toBe("x_q < 1");
   });
 });
 

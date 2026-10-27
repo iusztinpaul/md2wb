@@ -16,7 +16,9 @@ const PLAIN_LANGS = new Set(["text", "txt", "plain", "plaintext"]);
 export async function renderCode(source: string, lang: string, style: CodeStyle): Promise<Buffer> {
   const id = lang.toLowerCase();
   const known = PLAIN_LANGS.has(id) || Object.hasOwn(bundledLanguages, id);
-  const { tokens, bg = "#272822" } = await codeToTokens(source.replace(/\t/g, "    "), {
+  // Pasted terminal output may carry ANSI color codes; drop them.
+  const text = source.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\t/g, "    ");
+  const { tokens, bg = "#272822" } = await codeToTokens(text, {
     lang: (known ? id : "text") as BundledLanguage,
     theme: style.theme,
   });

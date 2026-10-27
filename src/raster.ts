@@ -65,6 +65,7 @@ export function pngDataUri(png: Buffer): string {
 
 export function escapeXml(text: string): string {
   return text
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // not allowed in XML
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")

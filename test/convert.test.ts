@@ -43,6 +43,11 @@ describe("convert", () => {
     expect(upper.equals(lower)).toBe(true);
   });
 
+  it("renders code containing ANSI codes and control characters", async () => {
+    const png = await renderCode("\x1b[31mred\x1b[0m \x01done", "text", TARGETS.x.code);
+    expect(png.length).toBeGreaterThan(0);
+  });
+
   it("keeps text-snippet code as text and drops hide-cell code", async () => {
     const { body } = await run(
       "<!-- md2wb: text-snippet -->\n```bash\nnpm i\n```\n\n```python hide-cell\nsecret()\n```\n\n<!-- nb2wb: hide-cell -->\n```python\nalso_secret()\n```",
@@ -56,6 +61,15 @@ describe("convert", () => {
     const { body } = await run("<!-- md2wb: hide-cell -->\n\nA paragraph.\n\n```python\nprint(1)\n```");
     expect(body).toContain("A paragraph.");
     expect(images(body)).toMatchObject([{ alt: "code" }]);
+  });
+
+  it("only applies directives that are the code block's previous siblings", async () => {
+    const quoted = await run("> <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
+    expect(images(quoted.body)).toMatchObject([{ alt: "code" }]);
+    const defined = await run("<!-- md2wb: hide-cell -->\n[a]: https://example.com\n\n```python\nprint(1)\n```");
+    expect(images(defined.body)).toMatchObject([{ alt: "code" }]);
+    const stacked = await run("<!-- md2wb: hide-cell -->\n<!-- md2wb: text-snippet -->\n```python\nprint(1)\n```");
+    expect(stacked.body).not.toContain("print(1)");
   });
 
   it("ignores directive comments inside a paragraph", async () => {
@@ -87,6 +101,8 @@ describe("convert", () => {
     expect(quoted.body).not.toMatch(/&#x3E;|&gt;/);
     const styled = await run("Pay $5 for **bold** and $10.");
     expect(styled.body).toContain("Pay $5 for <strong>bold</strong> and $10.");
+    const spaced = await run("costs $ 5 and $ 10 later");
+    expect(spaced.body).toContain("costs $ 5 and $ 10 later");
   });
 
   it("converts \\[...\\] that starts a list item", async () => {
@@ -133,6 +149,18 @@ describe("convert", () => {
     expect(images(body)).toMatchObject([{ alt: "dot", width: 2, height: 3 }]);
     expect(body).not.toContain("missing.png");
     expect(warnings).toEqual([expect.stringContaining("missing.png")]);
+  });
+
+  it("fetches protocol-relative image URLs over https", async () => {
+    const png = await readFile(`${fixtures}/tiny.png`);
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return new Response(png, { headers: { "content-type": "image/png" } });
+    });
+    const { body } = await run("![cdn](//cdn.example.com/a.png)");
+    expect(fetched).toEqual(["https://cdn.example.com/a.png"]);
+    expect(images(body)).toMatchObject([{ alt: "cdn" }]);
   });
 
   it("embeds remote images served as octet-stream when the extension says image", async () => {

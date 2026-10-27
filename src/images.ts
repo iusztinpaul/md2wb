@@ -47,6 +47,7 @@ export async function processImages(tree: Root, options: ImageOptions): Promise<
 }
 
 async function toDataUri(src: string, baseDir: string): Promise<string> {
+  if (src.startsWith("//")) src = `https:${src}`; // protocol-relative URL
   if (/^https?:\/\//i.test(src)) {
     const response = await fetch(src, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

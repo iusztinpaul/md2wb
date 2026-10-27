@@ -37,8 +37,6 @@ const FRONT_MATTER_RE = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)
 // `<!-- md2wb: hide-cell, text-snippet -->` applies to the code block right
 // after it. The nb2wb prefix is accepted so existing articles keep working.
 const DIRECTIVE_RE = /<!--\s*(?:md2wb|nb2wb)\s*:\s*(.+?)\s*-->/g;
-// Any of these between a directive and a code block cancels the directive.
-const BLOCKS = new Set(["paragraph", "heading", "list", "blockquote", "table", "math", "thematicBreak", "html"]);
 // Directives are block-level comments, never comments inside a paragraph.
 const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinition"]);
 
@@ -97,7 +95,6 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
   const displayImages = new Set<Nodes>();
   const preamble: string[] = [];
   const jobs: Array<() => Promise<void>> = [];
-  let pending: string[] = [];
 
   const addJob = (what: string, render: () => Promise<Buffer>, done: (png: Buffer) => void, failed?: () => void) =>
     jobs.push(async () => {
@@ -110,19 +107,20 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
     });
 
   visit(tree, (node, index, parent) => {
-    if (node.type === "html" && FLOW_PARENTS.has(parent?.type ?? "root")) {
-      const tags = directiveTags(node.value);
-      if (tags) {
-        pending.push(...tags);
-        removed.add(node);
-        return;
-      }
+    if (node.type === "html" && FLOW_PARENTS.has(parent?.type ?? "root") && directiveTags(node.value)) {
+      removed.add(node);
+      return;
     }
-    if (BLOCKS.has(node.type)) pending = [];
     switch (node.type) {
       case "code": {
-        const tags = [...pending, ...(node.meta?.split(/\s+/) ?? [])];
-        pending = [];
+        const tags = node.meta?.split(/\s+/) ?? [];
+        // Directive comments directly above the block (its previous siblings) apply to it.
+        for (let i = index! - 1; i >= 0; i--) {
+          const previous = parent!.children[i]!;
+          const directive = previous.type === "html" ? directiveTags(previous.value) : undefined;
+          if (!directive) break;
+          tags.push(...directive);
+        }
         if (node.lang === "latex-preamble") {
           preamble.push(node.value);
           removed.add(node);
@@ -156,7 +154,7 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
         const kind = inlineMathKind(node, ctx.source);
         if (kind === "text") {
           // Not math after all (a price): parse it as the Markdown it is.
-          const children = parseInline(`$${latex}$`);
+          const children = parseInline(spanSource(node, ctx.source));
           (parent!.children as PhrasingContent[]).splice(index!, 1, ...children);
           return [SKIP, index! + children.length];
         }
@@ -214,6 +212,14 @@ function inlineMathKind(node: InlineMath, source: string): "display" | "inline" 
   return tex ? "inline" : "text";
 }
 
+/** The span's source text, without container prefixes on continuation lines. */
+function spanSource(node: InlineMath, source: string): string {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  if (start === undefined || end === undefined) return `$${node.value}$`;
+  return source.slice(start, end).replace(/\n[ \t>]*/g, "\n");
+}
+
 const inlineParser = unified().use(remarkParse).use(remarkGfm).use(remarkBreaks);
 
 function parseInline(markdown: string): PhrasingContent[] {
@@ -266,7 +272,7 @@ function cellText(node: Nodes, source: string): string {
     case "inlineCode":
       return node.value;
     case "inlineMath":
-      return inlineMathKind(node, source) === "text" ? `$${node.value}$` : inlineMathToText(node.value);
+      return inlineMathKind(node, source) === "text" ? spanSource(node, source) : inlineMathToText(node.value);
     case "break":
       return "\n";
     case "html":
