@@ -122,8 +122,15 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
           removed.add(node);
         } else if (tags.includes("hide-cell")) {
           removed.add(node);
+        } else {
+          // Every other code block stays a <pre><code> snippet readers can copy.
+          // Drop terminal color codes and control characters, and expand tabs
+          // so the indentation survives pasting.
+          node.value = node.value
+            .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+            .replace(/\t/g, "    ");
         }
-        // Every other code block stays a <pre><code> snippet readers can copy.
         return;
       }
       case "math": {

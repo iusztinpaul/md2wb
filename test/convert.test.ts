@@ -36,6 +36,11 @@ describe("convert", () => {
     }
   });
 
+  it("cleans terminal output and tabs in snippets", async () => {
+    const { body } = await run("```text\n\x1b[31mred\x1b[0m\x01\n\tindented\n```");
+    expect(body).toContain('<pre><code class="language-text">red\n    indented\n</code></pre>');
+  });
+
   it("drops hide-cell code, by comment or fence tag", async () => {
     const { body } = await run(
       "```python hide-cell\nsecret()\n```\n\n<!-- nb2wb: hide-cell -->\n```python\nalso_secret()\n```\n\n```bash\nnpm i\n```",
@@ -44,24 +49,28 @@ describe("convert", () => {
     expect(body).toContain('<pre><code class="language-bash">npm i');
   });
 
+  const snippet = '<pre><code class="language-python">print(1)\n</code></pre>';
+
   it("only applies a directive to the code block right after it", async () => {
     const { body } = await run("<!-- md2wb: hide-cell -->\n\nA paragraph.\n\n```python\nprint(1)\n```");
     expect(body).toContain("A paragraph.");
-    expect(body).toContain("print(1)");
+    expect(body).toContain(snippet);
+    expect(body).not.toContain("md2wb:");
   });
 
   it("only applies directives that are the code block's previous siblings", async () => {
     const quoted = await run("> <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
-    expect(quoted.body).toContain("print(1)");
+    expect(quoted.body).toContain(snippet);
+    expect(quoted.body).not.toContain("md2wb:");
     const defined = await run("<!-- md2wb: hide-cell -->\n[a]: https://example.com\n\n```python\nprint(1)\n```");
-    expect(defined.body).toContain("print(1)");
+    expect(defined.body).toContain(snippet);
     const stacked = await run("<!-- md2wb: hide-cell -->\n<!-- md2wb: text-snippet -->\n```python\nprint(1)\n```");
     expect(stacked.body).not.toContain("print(1)");
   });
 
   it("ignores directive comments inside a paragraph", async () => {
     const { body } = await run("text <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
-    expect(body).toContain("print(1)");
+    expect(body).toContain(snippet);
   });
 
   it("renders display math as numbered images and inline math as text", async () => {
