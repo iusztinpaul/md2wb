@@ -34,9 +34,11 @@ export interface ConvertOptions {
 }
 
 const FRONT_MATTER_RE = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/;
-// `<!-- md2wb: hide-cell, text-snippet -->` applies to the next code block.
-// The nb2wb prefix is accepted so existing articles keep working.
+// `<!-- md2wb: hide-cell, text-snippet -->` applies to the code block right
+// after it. The nb2wb prefix is accepted so existing articles keep working.
 const DIRECTIVE_RE = /<!--\s*(?:md2wb|nb2wb)\s*:\s*(.+?)\s*-->/g;
+// Any of these between a directive and a code block cancels the directive.
+const BLOCKS = new Set(["paragraph", "heading", "list", "blockquote", "table", "math", "thematicBreak", "html"]);
 
 export async function convert(markdown: string, options: ConvertOptions = {}): Promise<string> {
   const target = getTarget(options.target ?? "substack");
@@ -59,14 +61,18 @@ export async function convert(markdown: string, options: ConvertOptions = {}): P
 
 function splitFrontMatter(markdown: string): { language?: string; body: string } {
   const match = FRONT_MATTER_RE.exec(markdown);
-  if (!match) return { body: markdown };
+  const yaml = match?.[1] ?? "";
+  // A leading `---` may just be a thematic break: only strip a block that
+  // starts right after it and parses as a YAML mapping.
+  if (!match || !/^\S/.test(yaml)) return { body: markdown };
   let data: unknown;
   try {
-    data = parseYaml(match[1] ?? "");
+    data = parseYaml(yaml);
   } catch {
-    data = undefined;
+    return { body: markdown };
   }
-  const language = (data as { language?: unknown } | null)?.language;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { body: markdown };
+  const language = (data as { language?: unknown }).language;
   return { language: typeof language === "string" ? language : undefined, body: markdown.slice(match[0].length) };
 }
 
@@ -75,6 +81,7 @@ interface Context {
   labels: Map<string, number>;
   target: Target;
   warn: (message: string) => void;
+  /** Front-matter `language`, used for code blocks without one. */
   language?: string;
 }
 
@@ -83,7 +90,6 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
   const displayImages = new Set<Nodes>();
   const preamble: string[] = [];
   const jobs: Array<() => Promise<void>> = [];
-  const defaultLang = ctx.language ?? firstCodeLang(tree) ?? "python";
   let pending: string[] = [];
 
   const addJob = (what: string, render: () => Promise<Buffer>, done: (png: Buffer) => void, failed?: () => void) =>
@@ -97,15 +103,16 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
     });
 
   visit(tree, (node) => {
-    switch (node.type) {
-      case "html": {
-        const tags = directiveTags(node.value);
-        if (tags) {
-          pending.push(...tags);
-          removed.add(node);
-        }
+    if (node.type === "html") {
+      const tags = directiveTags(node.value);
+      if (tags) {
+        pending.push(...tags);
+        removed.add(node);
         return;
       }
+    }
+    if (BLOCKS.has(node.type)) pending = [];
+    switch (node.type) {
       case "code": {
         const tags = [...pending, ...(node.meta?.split(/\s+/) ?? [])];
         pending = [];
@@ -115,7 +122,7 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
         } else if (tags.includes("hide-cell")) {
           removed.add(node);
         } else if (!tags.includes("text-snippet")) {
-          const lang = node.lang ?? defaultLang;
+          const lang = node.lang ?? ctx.language ?? "";
           addJob(
             "code block",
             () => renderCode(node.value, lang, ctx.target.code),
@@ -139,8 +146,16 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
       case "inlineMath": {
         const latex = node.value;
-        if (!ctx.source.startsWith("$$", node.position?.start.offset ?? -1)) {
-          replaceNode(node, { type: "html", value: inlineMathToHtml(latex) });
+        const start = node.position?.start.offset;
+        const end = node.position?.end.offset;
+        const raw = start === undefined || end === undefined ? `$${latex}$` : ctx.source.slice(start, end);
+        if (!raw.startsWith("$$")) {
+          replaceNode(
+            node,
+            isTexSpan(raw, ctx.source[end ?? -1])
+              ? { type: "html", value: inlineMathToHtml(latex) }
+              : { type: "text", value: raw },
+          );
         } else if (latex.trim()) {
           // `$$...$$` inside a paragraph is still display math.
           addJob(
@@ -177,15 +192,13 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
   prune(tree, removed, displayImages);
 }
 
-function firstCodeLang(tree: Root): string | undefined {
-  let lang: string | undefined;
-  visit(tree, "code", (node) => {
-    if (node.lang && node.lang !== "latex-preamble") {
-      lang = node.lang;
-      return false;
-    }
-  });
-  return lang;
+/**
+ * Pandoc's rule for telling `$x$` from prices: no space just inside the
+ * dollars and no digit right after the closing one ("$5 and $10" is text).
+ */
+function isTexSpan(raw: string, next: string | undefined): boolean {
+  const inner = raw.slice(1, -1);
+  return /^\S/.test(inner) && /\S$/.test(inner) && !/\d/.test(next ?? "");
 }
 
 function directiveTags(html: string): string[] | undefined {

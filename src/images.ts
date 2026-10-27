@@ -29,20 +29,21 @@ export async function processImages(tree: Root, options: ImageOptions): Promise<
     if (node.tagName === "img") images.push({ node, ancestors: [...ancestors] });
   });
 
-  for (const { node, ancestors } of images) {
-    const parent = ancestors.at(-1)!;
-    const src = String(node.properties.src ?? "");
-    let dataUri: string;
-    try {
-      dataUri = src.startsWith("data:") ? src : await toDataUri(src, options.baseDir);
-    } catch (error) {
-      options.warn(`dropping image "${src}": ${(error as Error).message}`);
-      replaceChild(parent, node, []);
-      continue;
+  // Load all images concurrently, then rewrite the tree in document order.
+  const sources = images.map(({ node }) => String(node.properties.src ?? ""));
+  const loaded = await Promise.allSettled(
+    sources.map((src) => (src.startsWith("data:") ? src : toDataUri(src, options.baseDir))),
+  );
+  images.forEach(({ node, ancestors }, i) => {
+    const result = loaded[i]!;
+    if (result.status === "rejected") {
+      options.warn(`dropping image "${sources[i]}": ${(result.reason as Error).message}`);
+      replaceChild(ancestors.at(-1)!, node, []);
+      return;
     }
-    node.properties.src = dataUri;
+    node.properties.src = result.value;
     if (options.copyable) wrapCopyable(node, ancestors);
-  }
+  });
 }
 
 async function toDataUri(src: string, baseDir: string): Promise<string> {

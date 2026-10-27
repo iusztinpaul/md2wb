@@ -22,7 +22,8 @@ export interface PreparedMarkdown {
 /**
  * Rewrite `\[...\]` and bare `\begin{equation|align|...}` blocks as `$$` math
  * (the only display syntax remark-math knows), number `\label`ed equations and
- * resolve `\eqref{...}` references to `(N)`.
+ * resolve `\eqref{...}` references to `(N)`. `\[...\]` counts as math only on
+ * its own lines; inside a paragraph it is Markdown's escaped brackets.
  */
 export function prepareMath(source: string): PreparedMarkdown {
   const stash: string[] = [];
@@ -30,7 +31,8 @@ export function prepareMath(source: string): PreparedMarkdown {
 
   text = text.replace(DISPLAY_RE, (match, _env, _star, offset: number, whole: string) => {
     if (match.startsWith("$$")) return match;
-    const body = match.startsWith("\\[") ? match.slice(2, -2) : match;
+    const bracket = match.startsWith("\\[");
+    const body = bracket ? match.slice(2, -2) : match;
     const lineStart = whole.lastIndexOf("\n", offset - 1) + 1;
     const indent = whole.slice(lineStart, offset);
     const lineEnd = whole.indexOf("\n", offset + match.length);
@@ -39,14 +41,16 @@ export function prepareMath(source: string): PreparedMarkdown {
     if (/^[ \t]*$/.test(indent) && /^[ \t]*$/.test(rest)) {
       return `$$\n${indent}${body.trim()}\n${indent}$$`;
     }
-    return `$$${body}$$`;
+    return bracket ? match : `$$${body}$$`;
   });
 
+  // Each image shows one number, so all labels in a block share it.
   const labels = new Map<string, number>();
+  let count = 0;
   for (const [, latex] of text.matchAll(/\$\$([\s\S]+?)\$\$/g)) {
-    for (const [, label] of latex!.matchAll(LABEL_RE)) {
-      if (!labels.has(label!)) labels.set(label!, labels.size + 1);
-    }
+    const fresh = [...latex!.matchAll(LABEL_RE)].map(([, label]) => label!).filter((label) => !labels.has(label));
+    if (fresh.length) count++;
+    for (const label of fresh) labels.set(label, count);
   }
   text = text.replace(EQREF_RE, (ref, label: string) => {
     const n = labels.get(label);

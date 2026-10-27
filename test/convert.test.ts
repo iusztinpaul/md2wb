@@ -39,9 +39,15 @@ describe("convert", () => {
     expect(images(body)).toEqual([]);
   });
 
+  it("only applies a directive to the code block right after it", async () => {
+    const { body } = await run("<!-- md2wb: hide-cell -->\n\nA paragraph.\n\n```python\nprint(1)\n```");
+    expect(body).toContain("A paragraph.");
+    expect(images(body)).toMatchObject([{ alt: "code" }]);
+  });
+
   it("renders display math as numbered images and inline math as text", async () => {
     const { body, warnings } = await run(
-      "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2 \\label{eq:p}$$\n\nBy \\eqref{eq:p}, and \\[x\\] too.",
+      "Inline $E = mc^2$.\n\n$$a^2 + b^2 = c^2 \\label{eq:p}$$\n\nBy \\eqref{eq:p}, and\n\n\\[\nx\n\\]",
     );
     expect(body).toContain("<em>E</em> = <em>m</em><em>c</em>²");
     expect(body).toContain("By (1), and");
@@ -49,6 +55,12 @@ describe("convert", () => {
     expect(math.map((i) => i.alt)).toEqual(["math", "math"]);
     expect(math.every((i) => i.width === 1920)).toBe(true);
     expect(warnings).toEqual([]);
+  });
+
+  it("leaves prices and escaped brackets as text", async () => {
+    const { body } = await run("It costs $5 and $10 today. Escaped \\[1\\] brackets, and $x$.");
+    expect(body).toContain("It costs $5 and $10 today. Escaped [1] brackets, and <em>x</em>.");
+    expect(images(body)).toEqual([]);
   });
 
   it("splits paragraphs around inline display math", async () => {
@@ -97,6 +109,12 @@ describe("convert", () => {
     const { html } = await run("hello", "x");
     expect(html).toContain("<title>md2wb — X Articles Preview</title>");
     expect(html).toContain('id="copy-btn"');
+  });
+
+  it("does not mistake a leading thematic break for front matter", async () => {
+    const { body } = await run("---\n\nIntro paragraph: here\n\n---\n\nRest");
+    expect(body).toContain("Intro paragraph: here");
+    expect(body).toContain("Rest");
   });
 
   it("strips front matter and HTML comments", async () => {

@@ -50,6 +50,14 @@ Relative image paths resolve against `baseDir` (the article's folder when using 
 
 Everything in GitHub-flavored Markdown works: headings, emphasis, lists, links, blockquotes, strikethrough, tables, images. Single line breaks are kept as line breaks.
 
+A few rules decide what counts as math:
+
+- `$…$` is inline math only when there is no space just inside the dollars and no digit right after the closing one, so "it costs $5 and $10" stays text.
+- `\[…\]` is display math only on its own lines. Inside a paragraph it is Markdown's escaped brackets.
+- `$$…$$` and `\begin{equation|align|gather|multline|eqnarray}` are always display math.
+
+Code blocks without a language use the front-matter `language` (for example `language: python`), or plain text if there is none.
+
 ### Math preamble
 
 A `latex-preamble` code block is not rendered. Its `\newcommand` and `\definecolor` definitions apply to every formula in the article. `\usepackage` lines are ignored because MathJax already bundles the common packages.
@@ -63,7 +71,7 @@ A `latex-preamble` code block is not rendered. Its `\newcommand` and `\definecol
 
 ### Directives
 
-Put a directive comment on the line before a code block, or add it after the language on the fence line:
+Put a directive comment right before a code block, or add it after the language on the fence line. A directive followed by anything other than a code block is ignored.
 
 | Directive | Effect |
 | --- | --- |

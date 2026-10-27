@@ -3,7 +3,7 @@
 
 import type { Target } from "./targets.js";
 
-// Copy the article as text/html; X variant first strips the per-image buttons.
+// Copy the article as text/html, without the per-image buttons X pages add.
 const COPY_SCRIPT = `
 async function copyContent() {
   var btn = document.getElementById("copy-btn");
@@ -16,13 +16,18 @@ async function copyContent() {
     var blob = new Blob([content.innerHTML], { type: "text/html" });
     await navigator.clipboard.write([new ClipboardItem({ "text/html": blob })]);
   } catch (_) {
-    // Fallback: select the rendered article and let the browser copy it.
+    // Fallback: select the cleaned copy off-screen and let the browser copy it.
+    content.removeAttribute("id");
+    content.style.position = "fixed";
+    content.style.left = "-100000px";
+    document.body.appendChild(content);
     var range = document.createRange();
-    range.selectNode(document.getElementById("content"));
+    range.selectNodeContents(content);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
     document.execCommand("copy");
     window.getSelection().removeAllRanges();
+    content.remove();
   }
   btn.textContent = "\\u2713 Copied!";
   setTimeout(function () { btn.textContent = "\\u{1F4CB} Copy to clipboard"; }, 2500);

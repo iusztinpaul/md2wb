@@ -81,7 +81,9 @@ function openInBrowser(file: string): void {
       : process.platform === "win32"
         ? ["cmd", "/c", "start", '""', url]
         : ["xdg-open", url];
-  spawn(command!, args, { detached: true, stdio: "ignore" }).unref();
+  spawn(command!, args, { detached: true, stdio: "ignore" })
+    .on("error", (error) => console.error(`md2wb: could not open a browser: ${error.message}`))
+    .unref();
 }
 
 const entry = process.argv[1];
