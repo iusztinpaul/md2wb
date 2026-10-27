@@ -74,14 +74,10 @@ export async function main(argv: string[]): Promise<number> {
 }
 
 function openInBrowser(file: string): void {
-  const url = pathToFileURL(file).href;
-  const [command, ...args] =
-    process.platform === "darwin"
-      ? ["open", url]
-      : process.platform === "win32"
-        ? ["cmd", "/c", "start", '""', url]
-        : ["xdg-open", url];
-  spawn(command!, args, { detached: true, stdio: "ignore" })
+  // Each opener hands the .html file to the default browser; explorer.exe
+  // avoids cmd.exe's quoting rules on Windows.
+  const openers: Partial<Record<NodeJS.Platform, string>> = { darwin: "open", win32: "explorer.exe" };
+  spawn(openers[process.platform] ?? "xdg-open", [file], { detached: true, stdio: "ignore" })
     .on("error", (error) => console.error(`md2wb: could not open a browser: ${error.message}`))
     .unref();
 }

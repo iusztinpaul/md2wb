@@ -55,9 +55,10 @@ export function prepareMath(source: string): PreparedMarkdown {
     const indent = whole.slice(lineStart, offset);
     const lineEnd = whole.indexOf("\n", offset + match.length);
     const rest = whole.slice(offset + match.length, lineEnd === -1 ? undefined : lineEnd);
-    // On its own line: a `$$` block. Inside a paragraph: inline `$$...$$`.
-    if (/^[ \t]*$/.test(indent) && /^[ \t]*$/.test(rest)) {
-      return `$$\n${indent}${body.trim()}\n${indent}$$`;
+    // On its own lines (also inside a blockquote): a `$$` block that keeps the
+    // author's line prefixes. Inside a paragraph: inline `$$...$$`.
+    if (/^[ \t>]*$/.test(indent) && /^[ \t]*$/.test(rest)) {
+      return bracket ? `$$${body}$$` : `$$\n${indent}${match}\n${indent}$$`;
     }
     return bracket ? match : `$$${body}$$`;
   });

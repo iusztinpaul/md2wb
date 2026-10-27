@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderCode } from "../src/code.js";
+import { TARGETS } from "../src/targets.js";
 import { convert } from "../src/index.js";
 import { content, images } from "./helpers.js";
 
@@ -12,6 +14,8 @@ async function run(markdown: string, target: "substack" | "x" = "substack") {
 }
 
 describe("convert", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("renders prose as plain HTML", async () => {
     const { body, warnings } = await run("# Title\n\nSome **bold** and ~~gone~~ text.\nNext line.\n\n- one\n- two");
     expect(body).toContain("<h1>Title</h1>");
@@ -28,6 +32,12 @@ describe("convert", () => {
     const x = images((await run(source, "x")).html);
     expect(substack).toMatchObject([{ alt: "code", width: 1920 + 2 * 100 }]);
     expect(x).toMatchObject([{ alt: "code", width: 1200 + 2 * 30 }]);
+  });
+
+  it("highlights capitalized fence languages", async () => {
+    const upper = await renderCode("x = 1", "Python", TARGETS.x.code);
+    const lower = await renderCode("x = 1", "python", TARGETS.x.code);
+    expect(upper.equals(lower)).toBe(true);
   });
 
   it("keeps text-snippet code as text and drops hide-cell code", async () => {
@@ -100,6 +110,14 @@ describe("convert", () => {
     expect(images(body)).toMatchObject([{ alt: "dot", width: 2, height: 3 }]);
     expect(body).not.toContain("missing.png");
     expect(warnings).toEqual([expect.stringContaining("missing.png")]);
+  });
+
+  it("embeds remote images served as octet-stream when the extension says image", async () => {
+    const png = Buffer.from(await (await import("node:fs/promises")).readFile(`${fixtures}/tiny.png`));
+    vi.stubGlobal("fetch", async () => new Response(png, { headers: { "content-type": "application/octet-stream" } }));
+    const { body, warnings } = await run("![remote](https://cdn.example.com/fig.png)");
+    expect(warnings).toEqual([]);
+    expect(images(body)).toMatchObject([{ alt: "remote", width: 2, height: 3 }]);
   });
 
   it("adds per-image copy buttons only for X", async () => {

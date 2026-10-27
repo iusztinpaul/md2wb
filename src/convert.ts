@@ -42,6 +42,11 @@ const BLOCKS = new Set(["paragraph", "heading", "list", "blockquote", "table", "
 // Directives are block-level comments, never comments inside a paragraph.
 const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinition"]);
 
+/**
+ * Convert a Markdown article into the target's preview page. MathJax is set
+ * up once per process, so `\newcommand` and `\definecolor` definitions from
+ * one article's latex-preamble stay defined for later calls.
+ */
 export async function convert(markdown: string, options: ConvertOptions = {}): Promise<string> {
   const target = getTarget(options.target ?? "substack");
   const warn = options.onWarning ?? ((message: string) => console.warn(`md2wb: ${message}`));

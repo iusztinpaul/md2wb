@@ -57,10 +57,7 @@ export function inlineMathToHtml(latex: string): string {
     .replaceAll("\\}", RBRACE)
     .replace(TEXT_COMMAND_RE, (_, words: string) => `${UPRIGHT}${words}\uE009`);
   text = expandFrac(text).replace(FUNCTION_COMMAND_RE, "$1");
-  // unicodeit maps whichever script characters it can (x_{complex} -> xcₒₘₚₗₑₓ),
-  // so braced scripts are shielded from it and handled by scriptText().
-  text = text.replace(/([_^])\{([^}]*)\}/g, (_, op: string, inner: string) => (op === "^" ? SUP : SUB) + toUnicode(inner) + END);
-  text = toUnicode(text).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
+  text = toUnicode(shieldScripts(text)).replace(/&/g, AMP).replace(/</g, LT).replace(/>/g, GT);
   text = expandScripts(text).replace(/[{}]/g, "");
   return italicize(text)
     .replace(/[\uE008\uE009]/g, "")
@@ -77,6 +74,28 @@ function toUnicode(latex: string): string {
   } catch {
     return latex; // best effort: keep what unicodeit cannot parse
   }
+}
+
+/**
+ * unicodeit maps whichever script characters it can (x_{complex} becomes
+ * xcₒₘₚₗₑₓ), so braced scripts, nested ones included, are marked and
+ * converted all-or-nothing by expandScripts() instead.
+ */
+function shieldScripts(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i]!;
+    if ((ch === "^" || ch === "_") && text[i + 1] === "{") {
+      const [inner, next] = braceArg(text, i + 1);
+      out += (ch === "^" ? SUP : SUB) + toUnicode(shieldScripts(inner)) + END;
+      i = next;
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return out;
 }
 
 /** Plain-text variant, for places that cannot hold markup (table images). */
@@ -132,14 +151,17 @@ function scriptText(inner: string, table: Record<string, string>, tag: string): 
 }
 
 function expandScripts(text: string): string {
+  // Innermost marked groups first, so nested scripts nest as tags.
+  const innermost = /([\uE003\uE004])([^\uE003\uE004\uE005]*)\uE005/;
+  while (innermost.test(text)) {
+    text = text.replace(innermost, (_, mark: string, inner: string) =>
+      mark === SUP ? scriptText(inner, SUPERSCRIPT, "sup") : scriptText(inner, SUBSCRIPT, "sub"),
+    );
+  }
   return text
-    .replace(/\uE003([^\uE005]*)\uE005/g, (_, inner: string) => scriptText(inner, SUPERSCRIPT, "sup"))
-    .replace(/\uE004([^\uE005]*)\uE005/g, (_, inner: string) => scriptText(inner, SUBSCRIPT, "sub"))
-    .replace(/\^([^\s{])/gu, (_, ch: string) => SUPERSCRIPT[ch] ?? ch)
-    .replace(/_([^\s{])/gu, (_, ch: string) => SUBSCRIPT[ch] ?? ch);
+    .replace(/\^([^\s{])/gu, (_, ch: string) => SUPERSCRIPT[ch] ?? `<sup>${ch}</sup>`)
+    .replace(/_([^\s{])/gu, (_, ch: string) => SUBSCRIPT[ch] ?? `<sub>${ch}</sub>`);
 }
-
-const LETTER_RE = /\p{L}/u;
 
 /** Italicize variables and Greek letters, leaving tags and function names alone. */
 export function italicize(html: string): string {
@@ -158,12 +180,12 @@ function italicizeText(text: string): string {
     if (GREEK.has(ch)) {
       out += `<em>${ch}</em>`;
       i++;
-    } else if (LETTER_RE.test(ch)) {
+    } else if (/[A-Za-z]/.test(ch)) {
       const start = i;
-      while (i < chars.length && LETTER_RE.test(chars[i]!)) i++;
+      while (i < chars.length && /[A-Za-z]/.test(chars[i]!)) i++;
       const word = chars.slice(start, i).join("");
       const isCommand = chars[start - 1] === "\\"; // unresolved command, e.g. \mathbf
-      if (!isCommand && !ROMAN_FUNCTIONS.has(word.toLowerCase()) && /^[A-Za-z]+$/.test(word)) {
+      if (!isCommand && !ROMAN_FUNCTIONS.has(word.toLowerCase())) {
         out += [...word].map((c) => `<em>${c}</em>`).join("");
       } else {
         out += word;

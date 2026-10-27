@@ -12,7 +12,7 @@ describe("inlineMathToHtml", () => {
 
   it("uses Unicode sub/superscripts when every character has a form", () => {
     expect(inlineMathToHtml("x_{12}^{3}")).toBe("<em>x</em>₁₂³");
-    expect(inlineMathToHtml("x_a")).toBe("xₐ"); // one letter run, like nb2wb
+    expect(inlineMathToHtml("x_a")).toBe("<em>x</em>ₐ");
   });
 
   it("falls back to <sub>/<sup> otherwise", () => {
@@ -31,6 +31,16 @@ describe("inlineMathToHtml", () => {
 
   it("escapes HTML-special characters", () => {
     expect(inlineMathToHtml("a < b > c & d")).toBe("<em>a</em> &lt; <em>b</em> &gt; <em>c</em> &amp; <em>d</em>");
+  });
+
+  it("keeps bare scripts without a Unicode form as <sup>/<sub>", () => {
+    expect(inlineMathToHtml("x_y")).toBe("<em>x</em><sub><em>y</em></sub>");
+    expect(inlineMathToHtml(String.raw`x^\alpha`)).toBe("<em>x</em><sup><em>α</em></sup>");
+  });
+
+  it("nests scripts inside scripts", () => {
+    expect(inlineMathToHtml("x^{a_{b}}")).toBe("<em>x</em><sup><em>a</em><sub><em>b</em></sub></sup>");
+    expect(inlineMathToHtml("e^{-x_{i}^2}")).toBe("<em>e</em><sup>−<em>x</em><sub><em>i</em></sub>²</sup>");
   });
 
   it("keeps escaped braces", () => {

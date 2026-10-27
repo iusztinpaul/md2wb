@@ -50,8 +50,11 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
   if (/^https?:\/\//i.test(src)) {
     const response = await fetch(src, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const mime = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
-    if (!mime.startsWith("image/")) throw new Error(`not an image (${mime || "no content type"})`);
+    const type = (response.headers.get("content-type") ?? "").split(";")[0]!.trim();
+    // Some CDNs serve images as application/octet-stream; trust the extension then.
+    const mime = type.startsWith("image/") ? type : MIME_BY_EXT[path.extname(new URL(src).pathname).toLowerCase()];
+    if (!mime) throw new Error(`not an image (${type || "no content type"})`);
+    if (Number(response.headers.get("content-length")) > MAX_IMAGE_BYTES) tooLarge();
     return encode(Buffer.from(await response.arrayBuffer()), mime);
   }
   if (!src) throw new Error("empty src");
@@ -62,8 +65,12 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
 }
 
 function encode(data: Buffer, mime: string): string {
-  if (data.length > MAX_IMAGE_BYTES) throw new Error(`larger than ${MAX_IMAGE_BYTES} bytes`);
+  if (data.length > MAX_IMAGE_BYTES) tooLarge();
   return `data:${mime};base64,${data.toString("base64")}`;
+}
+
+function tooLarge(): never {
+  throw new Error(`larger than ${MAX_IMAGE_BYTES} bytes`);
 }
 
 function wrapCopyable(img: Element, ancestors: Parents[]): void {

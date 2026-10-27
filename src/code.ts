@@ -14,9 +14,10 @@ const LINE_NUMBER_COLOR = "#6e6e6e";
 const PLAIN_LANGS = new Set(["text", "txt", "plain", "plaintext"]);
 
 export async function renderCode(source: string, lang: string, style: CodeStyle): Promise<Buffer> {
-  const known = PLAIN_LANGS.has(lang) || Object.hasOwn(bundledLanguages, lang);
+  const id = lang.toLowerCase();
+  const known = PLAIN_LANGS.has(id) || Object.hasOwn(bundledLanguages, id);
   const { tokens, bg = "#272822" } = await codeToTokens(source.replace(/\t/g, "    "), {
-    lang: (known ? lang : "text") as BundledLanguage,
+    lang: (known ? id : "text") as BundledLanguage,
     theme: style.theme,
   });
   const lines = tokens.length ? tokens : [[]];

@@ -6,6 +6,10 @@ describe("prepareMath", () => {
     expect(prepareMath("a\n\n\\[\nx^2\n\\]\n\nb").markdown).toBe("a\n\n$$\nx^2\n$$\n\nb");
   });
 
+  it("converts \\[...\\] inside a blockquote", () => {
+    expect(prepareMath("> \\[\n> x = 1\n> \\]\n").markdown).toBe("> $$\n> x = 1\n> $$\n");
+  });
+
   it("leaves \\[...\\] inside a paragraph alone (Markdown escaped brackets)", () => {
     expect(prepareMath("see \\[1\\] here").markdown).toBe("see \\[1\\] here");
   });
