@@ -64,6 +64,12 @@ describe("prepareMath", () => {
     expect([...prepareMath(src).labels]).toEqual([["a", 1], ["b", 1], ["c", 2]]);
   });
 
+  it("escapes dollars that are prices, not math", () => {
+    expect(prepareMath("costs $5, while $x$ is").markdown).toBe("costs \\$5, while $x$ is");
+    expect(prepareMath("$5 and $10 and $20").markdown).toBe("\\$5 and \\$10 and $20");
+    expect(prepareMath("| a | b |\n|---|---|\n| $5 | $x$ |").markdown).toBe("| a | b |\n|---|---|\n| $5 | $x$ |");
+  });
+
   it("does not resolve escaped references", () => {
     const src = "$$a \\label{x}$$ \\\\eqref{x}";
     expect(prepareMath(src).markdown).toContain("\\\\eqref{x}");

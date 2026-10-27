@@ -3,6 +3,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Element, ElementContent, Parents, Root } from "hast";
 import { visitParents } from "unist-util-visit-parents";
 
@@ -59,13 +60,18 @@ async function toDataUri(src: string, baseDir: string): Promise<string> {
     return encode(Buffer.from(await response.arrayBuffer()), mime);
   }
   if (!src) throw new Error("empty src");
-  let name = src;
-  try {
-    name = decodeURIComponent(src);
-  } catch {
-    // A literal % in the file name.
+  let file: string;
+  if (/^file:/i.test(src)) {
+    file = fileURLToPath(src);
+  } else {
+    let name = src.replace(/[?#].*$/, ""); // drop ?query and #fragment
+    try {
+      name = decodeURIComponent(name);
+    } catch {
+      // A literal % in the file name.
+    }
+    file = path.resolve(baseDir, name);
   }
-  const file = path.resolve(baseDir, name);
   const mime = MIME_BY_EXT[path.extname(file).toLowerCase()];
   if (!mime) throw new Error("unsupported image type");
   return encode(await readFile(file), mime);

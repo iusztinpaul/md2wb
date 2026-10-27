@@ -1,7 +1,7 @@
 import { copyFile, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderCode } from "../src/code.js";
 import { TARGETS } from "../src/targets.js";
@@ -105,6 +105,18 @@ describe("convert", () => {
     expect(spaced.body).toContain("costs $ 5 and $ 10 later");
   });
 
+  it("keeps footnotes and math next to prices", async () => {
+    const { body } = await run("It costs $5 per month[^1], or $50 per year, while $x$ varies.\n\n[^1]: Billed monthly.");
+    expect(body).toContain("It costs $5 per month");
+    expect(body).toContain("Billed monthly.");
+    expect(body).toContain("while <em>x</em> varies");
+  });
+
+  it("drops an empty inline $$ $$", async () => {
+    const { body } = await run("text $$ $$ more");
+    expect(body).not.toContain("<code");
+  });
+
   it("converts \\[...\\] that starts a list item", async () => {
     const { body } = await run("- \\[ x = 1 \\]\n- next");
     expect(images(body)).toMatchObject([{ alt: "math" }]);
@@ -169,6 +181,13 @@ describe("convert", () => {
     const { body, warnings } = await run("![remote](https://cdn.example.com/fig.png)");
     expect(warnings).toEqual([]);
     expect(images(body)).toMatchObject([{ alt: "remote", width: 2, height: 3 }]);
+  });
+
+  it("loads local images with a query, a fragment or a file: URL", async () => {
+    const file = path.join(fixtures, "tiny.png");
+    const { body, warnings } = await run(`![q](tiny.png?raw=true)\n\n![f](tiny.png#center)\n\n![u](${pathToFileURL(file).href})`);
+    expect(warnings).toEqual([]);
+    expect(images(body).map((i) => i.alt)).toEqual(["q", "f", "u"]);
   });
 
   it("loads local images whose names contain %", async () => {

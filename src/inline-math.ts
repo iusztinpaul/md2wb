@@ -58,14 +58,21 @@ const RENAMED: Record<string, string> = {
   rvert: "|",
   lVert: "‖",
   rVert: "‖",
+  lbrace: LBRACE,
+  rbrace: RBRACE,
   dots: "…",
+  dotsc: "…",
+  dotsb: "⋯",
+  dotsm: "⋯",
+  bmod: "mod",
   boldsymbol: "\\mathbf",
   bm: "\\mathbf",
 };
 const RENAMED_RE = new RegExp(`\\\\(${Object.keys(RENAMED).join("|")})(?![A-Za-z])`, "g");
 
 // Commands whose argument is upright text rather than math.
-const TEXT_COMMAND_RE = /\\(?:text|textrm|mathrm|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
+const TEXT_COMMAND_RE =
+  /\\(?:text|textrm|textbf|textit|texttt|textsf|emph|mathrm|mathit|mathsf|mathtt|operatorname\*?|mbox)\s*\{([^{}]*)\}/g;
 
 /** Convert one inline TeX expression (without the dollars) to an HTML fragment. */
 export function inlineMathToHtml(latex: string): string {
@@ -144,11 +151,17 @@ export function inlineMathToText(latex: string): string {
     .replace(/<[^>]+>/g, "")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
     .replaceAll("&amp;", "&");
 }
 
-/** Read one `{...}` argument, set-aside text, or single character at `pos`. */
+/** Read one `{...}` argument, set-aside text, command or single character at `pos`. */
 function braceArg(s: string, pos: number): [string, number] {
+  if (s[pos] === "\\") {
+    const command = /\\(?:[A-Za-z]+|.)/y;
+    command.lastIndex = pos;
+    if (command.test(s)) return [s.slice(pos, command.lastIndex), command.lastIndex];
+  }
   if (s[pos] === UPRIGHT) {
     const close = s.indexOf(UPRIGHT_END, pos);
     if (close !== -1) return [s.slice(pos, close + 1), close + 1];

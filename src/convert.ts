@@ -151,16 +151,11 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       }
       case "inlineMath": {
         const latex = node.value;
-        const kind = inlineMathKind(node, ctx.source);
-        if (kind === "text") {
-          // Not math after all (a price): parse it as the Markdown it is.
-          const children = parseInline(spanSource(node, ctx.source));
-          (parent!.children as PhrasingContent[]).splice(index!, 1, ...children);
-          return [SKIP, index! + children.length];
-        }
-        if (kind === "inline") {
+        if (!ctx.source.startsWith("$$", node.position?.start.offset ?? -1)) {
           replaceNode(node, { type: "html", value: inlineMathToHtml(latex) });
-        } else if (latex.trim()) {
+        } else if (!latex.trim()) {
+          removed.add(node);
+        } else {
           // `$$...$$` inside a paragraph is still display math.
           addJob(
             "display math",
@@ -177,7 +172,7 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
       case "table": {
         addJob(
           "table",
-          async () => renderTable(tableCells(node, ctx.source), ctx.target.table),
+          async () => renderTable(tableCells(node), ctx.target.table),
           (png) => replaceNode(node, paragraph(image(png, "table"))),
         );
         return SKIP;
@@ -194,38 +189,6 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
   }
   for (const job of jobs) await job();
   prune(tree, removed, displayImages);
-}
-
-type InlineMath = Extract<Nodes, { type: "inlineMath" }>;
-
-/**
- * Judge a remark-math `inlineMath` node from its source: `$$...$$` is display
- * math, and Pandoc's rule tells `$x$` from prices (no space just inside the
- * dollars, no digit right after the closing one), so "$5 and $10" is text.
- */
-function inlineMathKind(node: InlineMath, source: string): "display" | "inline" | "text" {
-  const start = node.position?.start.offset;
-  const end = node.position?.end.offset;
-  if (start === undefined || end === undefined) return "inline";
-  if (source.startsWith("$$", start)) return "display";
-  const tex = /\S/.test(source[start + 1] ?? "") && /\S/.test(source[end - 2] ?? "") && !/\d/.test(source[end] ?? "");
-  return tex ? "inline" : "text";
-}
-
-/** The span's source text, without container prefixes on continuation lines. */
-function spanSource(node: InlineMath, source: string): string {
-  const start = node.position?.start.offset;
-  const end = node.position?.end.offset;
-  if (start === undefined || end === undefined) return `$${node.value}$`;
-  return source.slice(start, end).replace(/\n[ \t>]*/g, "\n");
-}
-
-const inlineParser = unified().use(remarkParse).use(remarkGfm).use(remarkBreaks);
-
-function parseInline(markdown: string): PhrasingContent[] {
-  const tree = inlineParser.runSync(inlineParser.parse(markdown)) as Root;
-  const first = tree.children[0];
-  return first?.type === "paragraph" ? first.children : [{ type: "text", value: markdown }];
 }
 
 function directiveTags(html: string): string[] | undefined {
@@ -256,29 +219,29 @@ function replaceNode(node: Nodes, replacement: Nodes): void {
   Object.assign(node, replacement);
 }
 
-function tableCells(table: Table, source: string): TableCell[][] {
+function tableCells(table: Table): TableCell[][] {
   return table.children.map((row, r) =>
     row.children.map((cell, c) => ({
-      text: cellText(cell, source).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim(),
+      text: cellText(cell).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").trim(),
       align: table.align?.[c] ?? "left",
       header: r === 0,
     })),
   );
 }
 
-function cellText(node: Nodes, source: string): string {
+function cellText(node: Nodes): string {
   switch (node.type) {
     case "text":
     case "inlineCode":
       return node.value;
     case "inlineMath":
-      return inlineMathKind(node, source) === "text" ? spanSource(node, source) : inlineMathToText(node.value);
+      return inlineMathToText(node.value);
     case "break":
       return "\n";
     case "html":
       return node.value.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
     default:
-      return "children" in node ? node.children.map((child) => cellText(child, source)).join("") : "";
+      return "children" in node ? node.children.map(cellText).join("") : "";
   }
 }
 

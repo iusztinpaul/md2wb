@@ -2,6 +2,8 @@
 // rendering to PNG. MathJax runs in-process, so no TeX install is needed.
 
 import MathJax, { type MathJaxInstance } from "mathjax";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { visit } from "unist-util-visit";
@@ -30,7 +32,8 @@ export interface PreparedMarkdown {
  * Rewrite `\[...\]` and bare `\begin{equation|align|...}` blocks as `$$` math
  * (the only display syntax remark-math knows), number `\label`ed equations and
  * resolve `\eqref{...}` references to `(N)`. `\[...\]` counts as math only on
- * its own lines; inside a paragraph it is Markdown's escaped brackets.
+ * its own lines; inside a paragraph it is Markdown's escaped brackets. Dollar
+ * signs that are prices rather than math get escaped.
  */
 export function prepareMath(source: string): PreparedMarkdown {
   // Code (fenced, indented or inline) must never be touched by the rewrites
@@ -82,7 +85,32 @@ export function prepareMath(source: string): PreparedMarkdown {
     return n === undefined ? ref : `(${n})`;
   });
 
-  return { markdown: text.replace(PLACEHOLDER_RE, (_, i: string) => stash[Number(i)]!), labels };
+  return { markdown: escapePrices(text.replace(PLACEHOLDER_RE, (_, i: string) => stash[Number(i)]!)), labels };
+}
+
+/**
+ * Escape the opening `$` of every inline span that fails Pandoc's rule for
+ * math (no space just inside the dollars, no digit right after the closing
+ * one), so "$5 and $10" stays text and the main parse pairs the remaining
+ * dollars correctly. Escaping one span can re-pair later dollars, hence the
+ * loop.
+ */
+function escapePrices(markdown: string): string {
+  const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+  for (let round = 0; round < 100; round++) {
+    const openers: number[] = [];
+    visit(parser.parse(markdown), "inlineMath", (node) => {
+      const start = node.position!.start.offset!;
+      const end = node.position!.end.offset!;
+      if (markdown.startsWith("$$", start)) return;
+      const tex =
+        /\S/.test(markdown[start + 1] ?? "") && /\S/.test(markdown[end - 2] ?? "") && !/\d/.test(markdown[end] ?? "");
+      if (!tex) openers.push(start);
+    });
+    if (!openers.length) break;
+    for (const offset of openers.reverse()) markdown = `${markdown.slice(0, offset)}\\${markdown.slice(offset)}`;
+  }
+  return markdown;
 }
 
 let mathjax: Promise<MathJaxInstance> | undefined;
