@@ -3,8 +3,8 @@ Copyright 2026 the md2wb authors
 
 This product includes software derived from nb2wb
 (https://github.com/the-palindrome/nb2wb): the inline-math conversion, the
-layout of the code, math and table images, the preview-page theme and copy
-scripts, and examples/image.png. nb2wb is distributed under the MIT License:
+layout of the math and table images, the preview-page theme and copy scripts,
+and examples/image.png. nb2wb is distributed under the MIT License:
 
 MIT License
 

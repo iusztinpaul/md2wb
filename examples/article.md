@@ -1,11 +1,10 @@
 ---
 title: "Publishing a Technical Memo from Markdown"
-language: python
 ---
 
 # Publishing a Technical Memo from Markdown
 
-This example walks through everything md2wb does to a Markdown article before you paste it into Substack or X Articles: math, code, tables, images and a few directives.
+This example walks through everything md2wb does to a Markdown article before you paste it into Substack or X Articles: math, tables, images, code snippets and a drafting directive.
 
 ```latex-preamble
 \usepackage{xcolor}
@@ -53,7 +52,9 @@ Neither editor accepts pasted tables, so they are drawn as images.
 | `substack` | embedded | long-form essays |
 | `x` | embedded, plus per-image copy buttons | short technical posts |
 
-## Code Becomes Images Too
+## Code Stays Copyable
+
+Code blocks stay as code snippets, so readers can select and copy them:
 
 ```python
 def fibonacci(n):
@@ -64,14 +65,11 @@ def fibonacci(n):
         a, b = b, a + b
 ```
 
-Use the `text-snippet` directive when readers should be able to copy the code:
-
-<!-- md2wb: text-snippet -->
 ```bash
 npx md2wb article.md --target x --open
 ```
 
-And `hide-cell` for drafting aids that do not belong in the published article:
+Use `hide-cell` for drafting aids that do not belong in the published article:
 
 <!-- md2wb: hide-cell -->
 ```python

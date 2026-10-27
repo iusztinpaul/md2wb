@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderCode } from "../src/code.js";
-import { TARGETS } from "../src/targets.js";
 import { convert } from "../src/index.js";
 import { content, images } from "./helpers.js";
 
@@ -29,52 +27,41 @@ describe("convert", () => {
     expect(warnings).toEqual([]);
   });
 
-  it("renders code blocks as images sized for the target", async () => {
-    const source = "```python\nprint('hi')\n```";
-    const substack = images((await run(source)).html);
-    const x = images((await run(source, "x")).html);
-    expect(substack).toMatchObject([{ alt: "code", width: 1920 + 2 * 100 }]);
-    expect(x).toMatchObject([{ alt: "code", width: 1200 + 2 * 30 }]);
+  it("keeps code blocks as copyable snippets on both targets", async () => {
+    const source = "```python\nprint('hi') # <ok> & done\n```";
+    for (const target of ["substack", "x"] as const) {
+      const { body } = await run(source, target);
+      expect(body).toContain('<pre><code class="language-python">print(\'hi\') # &#x3C;ok> &#x26; done\n</code></pre>');
+      expect(images(body)).toEqual([]);
+    }
   });
 
-  it("highlights capitalized fence languages", async () => {
-    const upper = await renderCode("x = 1", "Python", TARGETS.x.code);
-    const lower = await renderCode("x = 1", "python", TARGETS.x.code);
-    expect(upper.equals(lower)).toBe(true);
-  });
-
-  it("renders code containing ANSI codes and control characters", async () => {
-    const png = await renderCode("\x1b[31mred\x1b[0m \x01done", "text", TARGETS.x.code);
-    expect(png.length).toBeGreaterThan(0);
-  });
-
-  it("keeps text-snippet code as text and drops hide-cell code", async () => {
+  it("drops hide-cell code, by comment or fence tag", async () => {
     const { body } = await run(
-      "<!-- md2wb: text-snippet -->\n```bash\nnpm i\n```\n\n```python hide-cell\nsecret()\n```\n\n<!-- nb2wb: hide-cell -->\n```python\nalso_secret()\n```",
+      "```python hide-cell\nsecret()\n```\n\n<!-- nb2wb: hide-cell -->\n```python\nalso_secret()\n```\n\n```bash\nnpm i\n```",
     );
-    expect(body).toContain('<pre><code class="language-bash">npm i');
     expect(body).not.toContain("secret");
-    expect(images(body)).toEqual([]);
+    expect(body).toContain('<pre><code class="language-bash">npm i');
   });
 
   it("only applies a directive to the code block right after it", async () => {
     const { body } = await run("<!-- md2wb: hide-cell -->\n\nA paragraph.\n\n```python\nprint(1)\n```");
     expect(body).toContain("A paragraph.");
-    expect(images(body)).toMatchObject([{ alt: "code" }]);
+    expect(body).toContain("print(1)");
   });
 
   it("only applies directives that are the code block's previous siblings", async () => {
     const quoted = await run("> <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
-    expect(images(quoted.body)).toMatchObject([{ alt: "code" }]);
+    expect(quoted.body).toContain("print(1)");
     const defined = await run("<!-- md2wb: hide-cell -->\n[a]: https://example.com\n\n```python\nprint(1)\n```");
-    expect(images(defined.body)).toMatchObject([{ alt: "code" }]);
+    expect(defined.body).toContain("print(1)");
     const stacked = await run("<!-- md2wb: hide-cell -->\n<!-- md2wb: text-snippet -->\n```python\nprint(1)\n```");
     expect(stacked.body).not.toContain("print(1)");
   });
 
   it("ignores directive comments inside a paragraph", async () => {
     const { body } = await run("text <!-- md2wb: hide-cell -->\n\n```python\nprint(1)\n```");
-    expect(images(body)).toMatchObject([{ alt: "code" }]);
+    expect(body).toContain("print(1)");
   });
 
   it("renders display math as numbered images and inline math as text", async () => {

@@ -1,16 +1,8 @@
 // Publishing targets: preview-page theme plus the render settings for the
-// images we generate. Values mirror nb2wb's `substack` and `x` profiles.
+// math and table images we generate. Values mirror nb2wb's `substack` and `x`
+// profiles.
 
 export type TargetName = "substack" | "x";
-
-export interface CodeStyle {
-  fontSize: number;
-  /** Minimum width of the code panel, before outer padding. */
-  imageWidth: number;
-  paddingX: number;
-  paddingY: number;
-  theme: string;
-}
 
 export interface MathStyle {
   /** Pixels per em (nb2wb: 48pt at 150 dpi on Substack). */
@@ -42,7 +34,6 @@ export interface Target {
   copyableImages: boolean;
   theme: Record<string, string>;
   extraCss: string;
-  code: CodeStyle;
   math: MathStyle;
   table: TableStyle;
 }
@@ -91,7 +82,6 @@ const BASE_THEME: Record<string, string> = {
   "copy-image-button-background": "rgba(26, 137, 23, 0.9)",
   "copy-image-button-hover-background": "rgba(13, 95, 11, 0.95)",
   "copy-image-button-copied-background": "#0d5f0b",
-  "code-image-radius": "5px",
 };
 
 const X_THEME: Record<string, string> = {
@@ -145,7 +135,6 @@ export const TARGETS: Record<TargetName, Target> = {
     copyableImages: false,
     theme: BASE_THEME,
     extraCss: "#toolbar p { opacity: 0.7; }\nul, ol { padding-left: 1.6em; }\nli { margin-bottom: 0.25em; }",
-    code: { fontSize: 48, imageWidth: 1920, paddingX: 100, paddingY: 100, theme: "monokai" },
     math: { emPx: 100, padding: 68, imageWidth: 1920, color: "#000000", background: "#ffffff" },
     table: {
       fontSize: 34,
@@ -166,7 +155,6 @@ export const TARGETS: Record<TargetName, Target> = {
     copyableImages: true,
     theme: X_THEME,
     extraCss: "",
-    code: { fontSize: 42, imageWidth: 1200, paddingX: 30, paddingY: 30, theme: "monokai" },
     math: { emPx: 73, padding: 50, imageWidth: 1200, color: "#000000", background: "#ffffff" },
     table: {
       fontSize: 30,

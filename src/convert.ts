@@ -1,7 +1,7 @@
 // Markdown -> paste-ready HTML page. The document is parsed into an mdast
-// tree; code blocks, display math and tables are swapped for PNG images,
-// inline math becomes Unicode text, and the result is wrapped in the target's
-// preview page.
+// tree; display math and tables are swapped for PNG images, inline math
+// becomes Unicode text, code blocks stay copyable <pre><code> snippets, and
+// the result is wrapped in the target's preview page.
 
 import type { Root as HastRoot } from "hast";
 import type { Image, Nodes, Paragraph, Parents, PhrasingContent, Root, Table } from "mdast";
@@ -15,7 +15,6 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { SKIP, visit } from "unist-util-visit";
 import { parse as parseYaml } from "yaml";
-import { renderCode } from "./code.js";
 import { processImages } from "./images.js";
 import { inlineMathToHtml, inlineMathToText } from "./inline-math.js";
 import { isPriceSpan, loadPreamble, prepareMath, renderDisplayMath } from "./math.js";
@@ -34,8 +33,8 @@ export interface ConvertOptions {
 }
 
 const FRONT_MATTER_RE = /^---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/;
-// `<!-- md2wb: hide-cell, text-snippet -->` applies to the code block right
-// after it. The nb2wb prefix is accepted so existing articles keep working.
+// `<!-- md2wb: hide-cell -->` drops the code block right after it. The nb2wb
+// prefix is accepted so existing articles keep working.
 const DIRECTIVE_RE = /<!--\s*(?:md2wb|nb2wb)\s*:\s*(.+?)\s*-->/g;
 // Directives are block-level comments, never comments inside a paragraph.
 const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinition"]);
@@ -48,12 +47,12 @@ const FLOW_PARENTS = new Set(["root", "blockquote", "listItem", "footnoteDefinit
 export async function convert(markdown: string, options: ConvertOptions = {}): Promise<string> {
   const target = getTarget(options.target ?? "substack");
   const warn = options.onWarning ?? ((message: string) => console.warn(`md2wb: ${message}`));
-  const { language, body } = splitFrontMatter(markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"));
+  const body = stripFrontMatter(markdown.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n"));
   const { markdown: source, labels } = prepareMath(body);
 
   const remark = unified().use(remarkParse).use(remarkGfm).use(remarkMath).use(remarkBreaks);
   const tree = (await remark.run(remark.parse(source))) as Root;
-  await renderBlocks(tree, { source, labels, target, warn, language });
+  await renderBlocks(tree, { source, labels, target, warn });
 
   const hast = (await unified().use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw).run(tree)) as HastRoot;
   visit(hast, "comment", (_, index, parent) => {
@@ -64,21 +63,20 @@ export async function convert(markdown: string, options: ConvertOptions = {}): P
   return buildPage(unified().use(rehypeStringify).stringify(hast), target);
 }
 
-function splitFrontMatter(markdown: string): { language?: string; body: string } {
+function stripFrontMatter(markdown: string): string {
   const match = FRONT_MATTER_RE.exec(markdown);
   const yaml = match?.[1] ?? "";
   // A leading `---` may just be a thematic break: only strip a block that is
   // empty or starts right after it, and parses as a YAML mapping (or nothing).
-  if (!match || (match[1] !== undefined && !/^\S/.test(yaml))) return { body: markdown };
+  if (!match || (match[1] !== undefined && !/^\S/.test(yaml))) return markdown;
   let data: unknown;
   try {
     data = parseYaml(yaml);
   } catch {
-    return { body: markdown };
+    return markdown;
   }
-  if (data !== null && (typeof data !== "object" || Array.isArray(data))) return { body: markdown };
-  const language = (data as { language?: unknown } | null)?.language;
-  return { language: typeof language === "string" ? language : undefined, body: markdown.slice(match[0].length) };
+  if (data !== null && (typeof data !== "object" || Array.isArray(data))) return markdown;
+  return markdown.slice(match[0].length);
 }
 
 interface Context {
@@ -86,8 +84,6 @@ interface Context {
   labels: Map<string, number>;
   target: Target;
   warn: (message: string) => void;
-  /** Front-matter `language`, used for code blocks without one. */
-  language?: string;
 }
 
 async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
@@ -126,14 +122,8 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
           removed.add(node);
         } else if (tags.includes("hide-cell")) {
           removed.add(node);
-        } else if (!tags.includes("text-snippet")) {
-          const lang = node.lang ?? ctx.language ?? "";
-          addJob(
-            "code block",
-            () => renderCode(node.value, lang, ctx.target.code),
-            (png) => replaceNode(node, paragraph(image(png, "code", "code-img"))),
-          );
         }
+        // Every other code block stays a <pre><code> snippet readers can copy.
         return;
       }
       case "math": {
@@ -205,13 +195,8 @@ function directiveTags(html: string): string[] | undefined {
   return tags.length && !rest.trim() ? tags : undefined;
 }
 
-function image(png: Buffer, alt: string, className?: string): Image {
-  return {
-    type: "image",
-    url: pngDataUri(png),
-    alt,
-    ...(className ? { data: { hProperties: { className: [className] } } } : {}),
-  };
+function image(png: Buffer, alt: string): Image {
+  return { type: "image", url: pngDataUri(png), alt };
 }
 
 function paragraph(child: PhrasingContent): Paragraph {
