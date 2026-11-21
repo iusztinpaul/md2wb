@@ -172,6 +172,12 @@ async function renderBlocks(tree: Root, ctx: Context): Promise<void> {
         return;
       }
       case "table": {
+        // A "Table N: ..." line right under a table parses as its last row
+        // (GFM has no captions); lift it back out as a paragraph below the image.
+        const caption = takeCaptionRow(node);
+        if (caption && parent && index !== undefined) {
+          parent.children.splice(index + 1, 0, { type: "paragraph", children: caption } as Paragraph);
+        }
         addJob(
           "table",
           async () => renderTable(tableCells(node), ctx.target.table),
@@ -214,6 +220,19 @@ function paragraph(child: PhrasingContent): Paragraph {
 function replaceNode(node: Nodes, replacement: Nodes): void {
   for (const key of Object.keys(node)) delete (node as unknown as Record<string, unknown>)[key];
   Object.assign(node, replacement);
+}
+
+const CAPTION_RE = /^(table|tab\.)\s+\d+\s*[:.]/i;
+
+/** Remove and return the children of a trailing "Table N: ..." caption row. */
+export function takeCaptionRow(table: Table): PhrasingContent[] | undefined {
+  if (table.children.length < 2) return undefined;
+  const last = table.children[table.children.length - 1]!;
+  const [first, ...rest] = last.children;
+  if (!first || rest.some((cell) => cellText(cell).trim())) return undefined;
+  if (!CAPTION_RE.test(cellText(first).trim())) return undefined;
+  table.children.pop();
+  return first.children;
 }
 
 function tableCells(table: Table): TableCell[][] {

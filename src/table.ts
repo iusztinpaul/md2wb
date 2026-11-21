@@ -1,5 +1,5 @@
-// Tables -> PNG cards (header band, zebra rows, wrapped text, rounded corners,
-// soft shadow). Neither Substack nor X Articles accepts pasted HTML tables.
+// Tables -> PNG images (black-and-white grid, bold header, wrapped text).
+// Neither Substack nor X Articles accepts pasted HTML tables.
 
 import type { Font } from "opentype.js";
 import type { TableStyle } from "./targets.js";
@@ -13,15 +13,16 @@ export interface TableCell {
   header: boolean;
 }
 
+// Plain black and white: black text and grid on white, bold header.
 const COLORS = {
-  text: "#1f2937",
-  headerText: "#0f172a",
+  text: "#000000",
+  headerText: "#000000",
   background: "#ffffff",
-  headerBackground: "#eef2ff",
-  stripe: "#f8fafc",
-  border: "#dbe4ee",
+  headerBackground: "#ffffff",
+  stripe: "#ffffff",
+  border: "#000000",
   canvas: "#ffffff",
-  shadow: "#0f172a",
+  shadow: "#000000",
 };
 const BORDER = 1;
 const LINE_GAP = 4;
