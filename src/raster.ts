@@ -14,6 +14,9 @@ export const FONTS = {
   sans: require.resolve("dejavu-fonts-ttf/ttf/DejaVuSans.ttf"),
   sansBold: require.resolve("dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf"),
   serif: require.resolve("dejavu-fonts-ttf/ttf/DejaVuSerif.ttf"),
+  // Computer Modern (via KaTeX) for LaTeX-style tables.
+  latex: require.resolve("katex/dist/fonts/KaTeX_Main-Regular.ttf"),
+  latexBold: require.resolve("katex/dist/fonts/KaTeX_Main-Bold.ttf"),
 } as const;
 
 const parsedFonts = new Map<string, Font>();

@@ -1,4 +1,6 @@
-// Tables -> PNG images (black-and-white grid, bold header, wrapped text).
+// Tables -> PNG images styled like a LaTeX booktabs table: Computer Modern
+// text, heavy top and bottom rules, a thin rule under the header, no vertical
+// lines or cell fills.
 // Neither Substack nor X Articles accepts pasted HTML tables.
 
 import type { Font } from "opentype.js";
@@ -13,18 +15,11 @@ export interface TableCell {
   header: boolean;
 }
 
-// Plain black and white: black text and grid on white, bold header.
-const COLORS = {
-  text: "#000000",
-  headerText: "#000000",
-  background: "#ffffff",
-  headerBackground: "#ffffff",
-  stripe: "#ffffff",
-  border: "#000000",
-  canvas: "#ffffff",
-  shadow: "#000000",
-};
-const BORDER = 1;
+const COLORS = { text: "#000000", rule: "#000000", canvas: "#ffffff" };
+// booktabs rule weights, as a fraction of the font size (\heavyrulewidth, \lightrulewidth).
+const HEAVY_RULE = 0.08;
+const LIGHT_RULE = 0.05;
+const BORDER = 0;
 const LINE_GAP = 4;
 const MIN_COL_WIDTH = 64;
 
@@ -43,8 +38,8 @@ function cellFont(file: string, size: number): CellFont {
 
 export function renderTable(rows: TableCell[][], style: TableStyle): Buffer {
   const cols = Math.max(...rows.map((row) => row.length));
-  const body = cellFont(FONTS.sans, style.fontSize);
-  const header = cellFont(FONTS.sansBold, Math.max(style.fontSize + 1, Math.floor(style.fontSize * 1.06)));
+  const body = cellFont(FONTS.latex, style.fontSize);
+  const header = cellFont(FONTS.latexBold, style.fontSize);
   const fontOf = (cell: TableCell) => (cell.header ? header : body);
   const padX = style.cellPaddingX;
   const padY = style.cellPaddingY;
@@ -75,54 +70,48 @@ export function renderTable(rows: TableCell[][], style: TableStyle): Buffer {
     Math.max(...row.map(({ font, lines }) => Math.max(font.lineHeight, lines.length * font.lineHeight) + 2 * padY)),
   );
 
-  const tableWidth = widths.reduce((a, b) => a + b, 0) + (cols + 1) * BORDER;
-  const tableHeight = heights.reduce((a, b) => a + b, 0) + (rows.length + 1) * BORDER;
+  const heavy = Math.max(2, Math.round(style.fontSize * HEAVY_RULE));
+  const light = Math.max(1, Math.round(style.fontSize * LIGHT_RULE));
+  const headerRows = layout.findIndex((row) => !row.some(({ cell }) => cell.header));
+  const midAfter = headerRows > 0 ? headerRows : -1;
+  const tableWidth = widths.reduce((a, b) => a + b, 0);
+  const tableHeight = heights.reduce((a, b) => a + b, 0) + 2 * heavy + (midAfter > 0 ? light : 0);
   const canvasWidth = Math.max(style.imageWidth, tableWidth + 2 * margin);
   const canvasHeight = tableHeight + 2 * margin;
   const tx = Math.floor((canvasWidth - tableWidth) / 2);
   const ty = Math.floor((canvasHeight - tableHeight) / 2);
 
-  const parts: string[] = [];
-  let y = ty + BORDER;
-  let bodyRow = 0;
+  const rule = (y: number, h: number) =>
+    `<rect x="${tx}" y="${y}" width="${tableWidth}" height="${h}" fill="${COLORS.rule}"/>`;
+  const parts: string[] = [rule(ty, heavy)];
+  let y = ty + heavy;
   layout.forEach((row, r) => {
-    const isHeaderRow = row.some(({ cell }) => cell.header);
     const height = heights[r]!;
-    let x = tx + BORDER;
+    let x = tx;
     row.forEach(({ cell, font, lines }, c) => {
       const width = widths[c]!;
-      const fill = cell.header ? COLORS.headerBackground : bodyRow % 2 === 1 ? COLORS.stripe : COLORS.background;
-      parts.push(`<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}"/>`);
-
       const anchor = cell.align === "center" ? "middle" : cell.align === "right" ? "end" : "start";
       const textX = cell.align === "center" ? x + width / 2 : cell.align === "right" ? x + width - padX : x + padX;
       const top = y + Math.max((height - lines.length * font.lineHeight) / 2, 0);
-      const attrs = `font-size="${font.size}"${cell.header ? ' font-weight="bold"' : ""} fill="${cell.header ? COLORS.headerText : COLORS.text}" text-anchor="${anchor}"`;
+      const attrs = `font-size="${font.size}"${cell.header ? ' font-weight="bold"' : ""} fill="${COLORS.text}" text-anchor="${anchor}"`;
       lines.forEach((line, i) => {
         if (line) {
           parts.push(`<text x="${textX}" y="${top + i * font.lineHeight + font.ascent}" ${attrs}>${escapeXml(line)}</text>`);
         }
       });
-      x += width + BORDER;
+      x += width;
     });
-    if (!isHeaderRow) bodyRow++;
-    y += height + BORDER;
+    y += height;
+    if (r + 1 === midAfter) {
+      parts.push(rule(y, light));
+      y += light;
+    }
   });
+  parts.push(rule(y, heavy));
 
-  const radius = style.borderRadius;
-  const box = `x="${tx}" y="${ty}" width="${tableWidth}" height="${tableHeight}" rx="${radius}"`;
-  const shadow =
-    style.shadowAlpha > 0
-      ? `<filter id="blur" filterUnits="userSpaceOnUse" x="0" y="0" width="${canvasWidth}" height="${canvasHeight}"><feGaussianBlur stdDeviation="${style.shadowBlur / 2}"/></filter>`
-      : "";
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="${canvasWidth}" height="${canvasHeight}" font-family="DejaVu Sans">
-<defs>${shadow}<clipPath id="card"><rect ${box}/></clipPath></defs>
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="${canvasWidth}" height="${canvasHeight}" font-family="KaTeX_Main">
 <rect width="${canvasWidth}" height="${canvasHeight}" fill="${COLORS.canvas}"/>
-${shadow ? `<rect x="${tx}" y="${ty + style.shadowOffsetY}" width="${tableWidth}" height="${tableHeight}" rx="${radius}" fill="${COLORS.shadow}" fill-opacity="${style.shadowAlpha / 255}" filter="url(#blur)"/>` : ""}
-<g clip-path="url(#card)">
-<rect ${box} fill="${COLORS.border}"/>
 ${parts.join("\n")}
-</g>
 </svg>`;
   return svgToPng(svg);
 }
